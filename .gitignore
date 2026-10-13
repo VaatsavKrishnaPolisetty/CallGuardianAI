@@ -1,0 +1,38 @@
+# ==========================================
+# CallGuardianAI — Git Ignore Rules
+# ==========================================
+
+# Sensitive Files & API Keys
+.env
+.env.*
+.env.local
+!.env.example
+
+# Local SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
+callguardian.db
+.test-api-import.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+*.bak
+venv/
+.venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node & Dependencies
+node_modules/
+dist/
+
+# Operating System & IDE
+.DS_Store
+.vscode/
+.idea/

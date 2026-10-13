@@ -4,7 +4,8 @@
 /* ═════════════════════════════════════════════════════════════════════
    Auth module — session cookie + CSRF header for every fetch to the API
    ═════════════════════════════════════════════════════════════════════ */
-const API = window.CGAI_API_BASE || 'http://127.0.0.1:8001';
+const defaultApiHost = window.location.hostname || '127.0.0.1';
+const API = window.CGAI_API_BASE || `http://${defaultApiHost}:8001`;
 const CSRF_COOKIE  = 'cgai_csrf';
 const CSRF_HEADER  = 'X-CSRF-Token';
 const SESSION_COOKIE = 'cgai_session';
@@ -80,7 +81,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const digits = n => n.replace(/\D/g, '');
-const USER_STORAGE_KEY = `cgai:${window.CGAI_AUTH_USER.id}`;
+const USER_STORAGE_KEY = `cgai:${window.CGAI_AUTH_USER?.id || 'default'}`;
 let reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     
 /* ---------- State (persisted in localStorage when available) ---------- */
@@ -97,7 +98,11 @@ const DEFAULTS = () => ({
   stats: { calls: 0, spam: 0, saved: 0, transfers: 0 },
   outcomes: { ai: 0, transfer: 0, decline: 0 },
   week: [0, 0, 0, 0, 0, 0, 0],
-  voice: 'Calm', reduce: false
+  voice: 'Calm',
+  nvidiaVoice: 'alloy',
+  autoMicSend: true,
+  voicePlayback: true,
+  reduce: false
 });
 let state = DEFAULTS();
 try {
@@ -115,7 +120,7 @@ let timers = [];         // pending timeouts for the active call
 let selectedCall = null;
 let scheduleTurnedOn = false;
 let realAnalytics = null;
-const PENDING_COMPLETIONS_KEY = `cgaiPendingCompletions:${window.CGAI_AUTH_USER.id}`;
+const PENDING_COMPLETIONS_KEY = `cgaiPendingCompletions:${window.CGAI_AUTH_USER?.id || 'default'}`;
 const pendingCompletions = new Map();
 const completionRetryTimers = new Map();
 const completionRequests = new Set();
@@ -181,18 +186,22 @@ function toast(msg, warn) {
   setTimeout(() => t.remove(), 3200);
 }
  
-/* ---------- Text-to-speech (browser Web Speech API: local voice, not AI-generated audio) ---------- */
+/* ---------- Text-to-speech (NVIDIA NIM Speech API + Browser Web Speech fallback) ---------- */
 const TTS = {
-  ok: 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
-  voice: null, muted: false, speaking: false, token: 0, ready: null, ui: {},
-  pick() {   // prefers English (India), then natural/neural voices, then any English voice
+  ok: true,
+  voice: null, muted: false, speaking: false, token: 0, ready: null, ui: {}, audioEl: null,
+  pick() {
+    if (!('speechSynthesis' in window)) return;
     const en = speechSynthesis.getVoices().filter(v => /^en([-_]|$)/i.test(v.lang));
     const score = v => (/en[-_]IN/i.test(v.lang) ? 100 : 0) + (/natural|neural|online/i.test(v.name) ? 30 : 0)
       + (/google|microsoft|samantha|heera|neerja|ravi/i.test(v.name) ? 10 : 0) + (/en[-_](US|GB)/i.test(v.lang) ? 5 : 0);
     this.voice = en.sort((a, b) => score(b) - score(a))[0] || null;
-    if (this.ui.note) this.ui.note.textContent = (this.voice ? `Voice: ${this.voice.name} (${this.voice.lang}). ` : 'Using the browser default voice. ') + 'Browser text-to-speech; calls are simulated.';
+    if (this.ui.note) {
+      this.ui.note.textContent = (this.voice ? `Voice: ${this.voice.name} (${this.voice.lang}). ` : 'Using the browser default voice. ') + 'CallGuardian Speech Engine.';
+    }
   },
-  whenReady() {   // resolves once voices have loaded (or after 1.5s if the browser has none)
+  whenReady() {
+    if (!('speechSynthesis' in window)) return Promise.resolve();
     if (this.ready) return this.ready;
     this.ready = new Promise(res => {
       let settled = false, fallback;
@@ -207,9 +216,94 @@ const TTS = {
     return this.ready;
   },
   setSpeaking(on) { this.speaking = on; if (this.ui.stop) this.ui.stop.disabled = !on; },
-  speak(text, manual) {   // returns a Promise that resolves when speech ends, is stopped, or fails
-    if (!this.ok) { if (manual) toast('Speech is not supported in this browser.', true); return Promise.resolve(); }
+  audioCache: new Map(),
+  playAudioUrl(audioUrl) {
+    return new Promise((resolve, reject) => {
+      if (this.audioEl) {
+        try { this.audioEl.pause(); } catch (e) {}
+        this.audioEl = null;
+      }
+      const audio = new Audio(audioUrl);
+      this.audioEl = audio;
+      this.setSpeaking(true);
+      audio.onended = () => {
+        this.audioEl = null;
+        this.setSpeaking(false);
+        resolve();
+      };
+      audio.onerror = (err) => {
+        this.audioEl = null;
+        this.setSpeaking(false);
+        reject(err);
+      };
+      audio.play().catch(reject);
+    });
+  },
+  async speakNvidia(text, voiceOverride = null) {
+    const voice = voiceOverride || state.nvidiaVoice || 'alloy';
+    const cacheKey = `${voice}:${text}`;
+    if (this.audioCache.has(cacheKey)) {
+      return this.playAudioUrl(this.audioCache.get(cacheKey));
+    }
+
+    const res = await Auth.fetch(`${API}/tts`, {
+      method: 'POST',
+      body: JSON.stringify({
+        text,
+        voice: voice
+      })
+    });
+    if (!res.ok) throw new Error('NVIDIA TTS returned ' + res.status);
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      if (!data.supported || data.fallback_to_browser) {
+        throw new Error(data.reason || 'NVIDIA TTS not available');
+      }
+    }
+    const blob = await res.blob();
+    if (!blob || blob.size < 64) throw new Error('Empty audio');
+    const audioUrl = URL.createObjectURL(blob);
+    this.audioCache.set(cacheKey, audioUrl);
+    return this.playAudioUrl(audioUrl);
+  },
+  async speak(text, manual, voiceOverride = null) {
+    if (!text || !text.trim()) return Promise.resolve();
     if (this.muted) { if (manual) toast('Voice is muted. Unmute to hear replies.', true); return Promise.resolve(); }
+    if (state.voicePlayback === false && !manual) return Promise.resolve();
+
+    this.stop();
+
+    // 1. Always use NVIDIA AI Voice first
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.speakNvidia(text, voiceOverride);
+        return;
+      } catch (e) {
+        lastErr = e;
+        const errStr = String(e);
+        if (errStr.includes('429')) {
+          // Rate-limited: wait 800ms and try once more before failing
+          await new Promise(r => setTimeout(r, 800));
+        } else {
+          break;
+        }
+      }
+    }
+
+    // If NVIDIA is configured or status is online, DO NOT play the old browser robot voice!
+    if (window.CGAI_NVIDIA_ONLINE || state.nvidiaVoice) {
+      console.warn('NVIDIA TTS was unable to synthesize this line:', lastErr);
+      if (manual) toast('NVIDIA Voice engine is busy; please try again in a moment.', true);
+      return Promise.resolve();
+    }
+
+    // 2. Web Speech API fallback (only if NVIDIA is completely unconfigured)
+    if (!('speechSynthesis' in window)) {
+      if (manual) toast('Speech synthesis not supported in this browser.', true);
+      return Promise.resolve();
+    }
     const id = ++this.token;
     return new Promise(resolve => {
       let done = false, safety;
@@ -221,43 +315,268 @@ const TTS = {
         if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'en-IN';
         u.rate = { Calm: .95, Friendly: 1.03, Formal: .92 }[state.voice] || 1;
         u.onend = end;
-        u.onerror = ev => { if (!['canceled', 'interrupted'].includes(ev.error)) toast('Speech error (' + ev.error + '). The reply is still shown as text.', true); end(); };
-        safety = setTimeout(end, Math.max(3000, text.length * 110 + 2000));   // guards against browsers that never fire onend
+        u.onerror = ev => { end(); };
+        safety = setTimeout(end, Math.max(3000, text.length * 110 + 2000));
         this.setSpeaking(true);
-        try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) { toast('Could not start speech.', true); end(); }
-      }).catch(() => { toast('Could not prepare voice playback. The reply is still shown as text.', true); end(); });
+        try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) { end(); }
+      }).catch(() => { end(); });
     });
   },
-  stop() { if (!this.ok) return; this.token++; try { speechSynthesis.cancel(); } catch (e) { /* ignore */ } this.setSpeaking(false); },
+  stop() {
+    this.token++;
+    if (this.audioEl) {
+      try { this.audioEl.pause(); } catch (e) {}
+      this.audioEl = null;
+    }
+    if ('speechSynthesis' in window) {
+      try { speechSynthesis.cancel(); } catch (e) {}
+    }
+    this.setSpeaking(false);
+  },
   renderMute() { this.ui.mute.textContent = this.muted ? 'Unmute voice' : 'Mute voice'; this.ui.mute.setAttribute('aria-pressed', String(this.muted)); },
-  init() {   // builds the voice controls inside the existing call card
+  init() {
     this.muted = !!state.muted;
     const bar = document.createElement('div');
     bar.innerHTML = '<div class="actions"><button class="btn" id="ttsMute" type="button"></button><button class="btn" id="ttsStop" type="button" disabled>Stop speaking</button></div><p class="muted" id="ttsNote" style="margin-top:10px"></p>';
     $('#callCard').appendChild(bar);
     this.ui = { mute: $('#ttsMute'), stop: $('#ttsStop'), note: $('#ttsNote') };
     this.renderMute();
-    if (!this.ok) { this.ui.mute.disabled = true; this.ui.note.textContent = 'This browser does not support speech synthesis. Replies stay text-only.'; return; }
     this.ui.mute.addEventListener('click', () => { this.muted = !this.muted; state.muted = this.muted; save(); if (this.muted) this.stop(); this.renderMute(); toast(this.muted ? 'Voice muted' : 'Voice on'); });
     this.ui.stop.addEventListener('click', () => this.stop());
-    speechSynthesis.addEventListener('voiceschanged', () => this.pick());
+    if ('speechSynthesis' in window) {
+      speechSynthesis.addEventListener('voiceschanged', () => this.pick());
+    }
     this.pick();
   }
 };
- 
+
+/* ---------- Microphone Voice Input (Speech-to-Text) ---------- */
+const MicInput = {
+  recognizer: null,
+  isListening: false,
+  supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+  init() {
+    const btn = $('#micBtn');
+    if (!btn) return;
+    if (!this.supported) {
+      btn.title = 'Speech recognition requires Chrome, Edge or Safari';
+    }
+    btn.addEventListener('click', () => this.toggle());
+  },
+  toggle() {
+    if (this.isListening) {
+      this.stop();
+    } else {
+      this.start();
+    }
+  },
+  start() {
+    if (!this.supported) {
+      toast('Microphone speech recognition is not supported in this browser. Try Chrome or Edge.', true);
+      return;
+    }
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    try {
+      this.recognizer = new SpeechRec();
+      this.recognizer.continuous = false;
+      this.recognizer.interimResults = true;
+      this.recognizer.lang = 'en-US';
+
+      const btn = $('#micBtn');
+      const input = $('#chatInput');
+
+      this.recognizer.onstart = () => {
+        this.isListening = true;
+        if (btn) {
+          btn.classList.add('mic-active');
+          btn.textContent = '🔴 Listening…';
+        }
+        toast('🎙️ Speak naturally as the caller…');
+      };
+
+      this.recognizer.onresult = (e) => {
+        let transcript = '';
+        for (let i = 0; i < e.results.length; i++) {
+          transcript += e.results[i][0].transcript;
+        }
+        if (input) {
+          input.value = transcript;
+        }
+      };
+
+      this.recognizer.onerror = (e) => {
+        this.stop();
+        if (e.error !== 'no-speech') {
+          toast(`Microphone error: ${e.error}`, true);
+        }
+      };
+
+      this.recognizer.onend = () => {
+        this.stop();
+        if (input && input.value.trim() && state.autoMicSend !== false) {
+          submitChatMessage();
+        }
+      };
+
+      this.recognizer.start();
+    } catch (err) {
+      this.stop();
+      toast('Could not start microphone: ' + err.message, true);
+    }
+  },
+  stop() {
+    this.isListening = false;
+    const btn = $('#micBtn');
+    if (btn) {
+      btn.classList.remove('mic-active');
+      btn.textContent = '🎙️ Speak as Caller';
+    }
+    if (this.recognizer) {
+      try { this.recognizer.stop(); } catch (e) {}
+      this.recognizer = null;
+    }
+  }
+};
+
+/* ---------- Synchronized Audio Transcript Player ---------- */
+const AudioPlayer = {
+  isPlaying: false,
+  currentTurnIdx: 0,
+  turns: [],
+  token: 0,
+  init() {
+    const playBtn = $('#audioPlayBtn');
+    const scrubber = $('#audioScrubber');
+    if (playBtn) playBtn.addEventListener('click', () => this.togglePlay());
+    if (scrubber) {
+      scrubber.addEventListener('input', (e) => {
+        const val = +e.target.value;
+        const total = this.turns.length || 1;
+        const targetIdx = Math.min(this.turns.length - 1, Math.floor((val / 100) * total));
+        this.seekToTurn(targetIdx);
+      });
+    }
+  },
+  loadCall(call) {
+    this.stop();
+    this.turns = (call && Array.isArray(call.transcript)) ? call.transcript : [];
+    this.currentTurnIdx = 0;
+    const bar = $('#audioPlayerBar');
+    if (!bar) return;
+    if (this.turns.length > 0) {
+      bar.hidden = false;
+      const totalSec = Math.max(4, this.turns.length * 4);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      $('#audioTotalTime').textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+      $('#audioCurTime').textContent = '00:00';
+      $('#audioScrubber').value = 0;
+    } else {
+      bar.hidden = true;
+    }
+  },
+  togglePlay() {
+    if (this.isPlaying) this.pause();
+    else this.play();
+  },
+  pause() {
+    this.isPlaying = false;
+    this.token++;
+    TTS.stop();
+    const btn = $('#audioPlayBtn');
+    if (btn) btn.textContent = '▶ Play Call';
+    this.clearTurnHighlights();
+  },
+  stop() {
+    this.pause();
+    this.currentTurnIdx = 0;
+    const scrubber = $('#audioScrubber');
+    if (scrubber) scrubber.value = 0;
+    const curTime = $('#audioCurTime');
+    if (curTime) curTime.textContent = '00:00';
+  },
+  clearTurnHighlights() {
+    $$('#transcript .msg').forEach(el => el.classList.remove('turn-active-spoken'));
+  },
+  highlightTurn(idx) {
+    this.clearTurnHighlights();
+    const rows = $$('#transcript .msg');
+    if (rows[idx]) {
+      rows[idx].classList.add('turn-active-spoken');
+      rows[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    const scrubber = $('#audioScrubber');
+    if (scrubber && this.turns.length > 1) {
+      scrubber.value = Math.round((idx / (this.turns.length - 1)) * 100);
+    }
+    const curTime = $('#audioCurTime');
+    if (curTime) {
+      const curSec = idx * 4;
+      const min = Math.floor(curSec / 60);
+      const sec = curSec % 60;
+      curTime.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
+  },
+  async seekToTurn(idx) {
+    if (idx < 0 || idx >= this.turns.length) return;
+    this.pause();
+    TTS.stop();
+    this.currentTurnIdx = idx;
+    this.highlightTurn(idx);
+    const [speaker, text] = this.turns[idx];
+    const persona = speaker === 'caller' ? 'onyx' : (state.nvidiaVoice || 'alloy');
+    await TTS.speak(text, true, persona);
+  },
+  async play() {
+    if (!this.turns.length) return;
+    this.isPlaying = true;
+    const btn = $('#audioPlayBtn');
+    if (btn) btn.textContent = '⏸ Pause Call';
+    const currentToken = ++this.token;
+
+    for (let i = this.currentTurnIdx; i < this.turns.length; i++) {
+      if (!this.isPlaying || this.token !== currentToken) break;
+      this.currentTurnIdx = i;
+      this.highlightTurn(i);
+      const [speaker, text] = this.turns[i];
+      const persona = speaker === 'caller' ? 'onyx' : (state.nvidiaVoice || 'alloy');
+      await TTS.speak(text, false, persona);
+      if (!this.isPlaying || this.token !== currentToken) break;
+      await new Promise(r => setTimeout(r, 600));
+    }
+
+    if (this.token === currentToken) {
+      this.stop();
+    }
+  }
+};
+
 /* ---------- Navigation ---------- */
 const TITLES = {
-  overview: ['Overview', 'Simulated live view of your call agent'], calls: ['Calls', 'History and transcripts'],
-  contacts: ['Contacts', 'Known and unknown callers'], rules: ['Automation Rules', 'Schedules and behavior'],
-  analytics: ['Analytics', 'Real SQLite data from your call agent'], settings: ['Settings', 'Preferences']
+  heroLanding: ['Home', 'Autonomous Voice Intelligence, Real-Time Scam Defense & Knowledge Vault'],
+  overview: ['Live Simulator', 'Simulated live view of your call agent'],
+  calls: ['Calls', 'History and transcripts'],
+  contacts: ['Contacts', 'Known and unknown callers'],
+  rules: ['Automation Rules', 'Schedules and behavior'],
+  analytics: ['Analytics', 'Real SQLite data from your call agent'],
+  vault: ['Personal Knowledge Vault', 'Rules, FAQs & Caller Memory CRM'],
+  settings: ['Settings', 'NVIDIA Models & Audio Engine']
 };
 function go(id) {
   $$('.view').forEach(v => v.classList.toggle('on', v.id === id));
   $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === id));
-  $('#title').textContent = TITLES[id][0]; $('#sub').textContent = TITLES[id][1];
+  $('#title').textContent = (TITLES[id] && TITLES[id][0]) || id;
+  $('#sub').textContent = (TITLES[id] && TITLES[id][1]) || '';
+  if (id === 'heroLanding') {
+    if (lenisInstance) lenisInstance.scrollTo(0, { immediate: true });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+    animateMetricCounters();
+  }
   if (id === 'analytics') loadAnalytics();
   if (id === 'overview') { resizeOrb(); kick(); }
   if (id === 'calls') loadCalls();
+  if (id === 'vault') { loadVault(); loadCRM(); }
+  if (id === 'settings') checkNvidiaStatus();
 }
  
 /* ---------- Agent mode ---------- */
@@ -391,6 +710,14 @@ async function sendCaller(raw, retryRow = null) {
       active.reviewRequired = data.review_required;
       active.suggestedAction = data.suggested_action;
       active.sensitiveInfoRequested = data.sensitive_info_requested;
+      active.sentiment = data.sentiment || (active.risk === 'High' ? 'Aggressive' : active.urgency === 'High' ? 'Frustrated' : 'Neutral');
+      active.stress_level = data.stress_level ?? (active.risk === 'High' ? 85 : active.urgency === 'High' ? 65 : 25);
+      if (!active.trajectory) active.trajectory = [];
+      active.trajectory.push({
+        turn: active.trajectory.length + 1,
+        sentiment: active.sentiment,
+        stress: active.stress_level
+      });
       const safetyWarning = active.sensitiveInfoRequested
         ? ' SECURITY WARNING: Never disclose OTPs, passwords, banking PINs, verification codes, CVVs, or full card details.'
         : '';
@@ -401,7 +728,14 @@ async function sendCaller(raw, retryRow = null) {
       };
       renderDecision();
       callerMsg.dataset.status = 'sent';
-      addMsg(tr, ['ai', reply]); active.chat.push(['ai', reply]);
+      const metaSpan = document.createElement('span');
+      metaSpan.className = `tag tag-sentiment ${active.sentiment.toLowerCase()}`;
+      metaSpan.style.cssText = 'font-size:0.68rem;padding:1px 6px;margin-left:6px';
+      metaSpan.textContent = `${active.sentiment} ${active.stress_level}%`;
+      callerMsg.querySelector('small')?.appendChild(metaSpan);
+
+      addMsg(tr, ['ai', reply, { sentiment: 'Neutral' }]);
+      active.chat.push(['ai', reply]);
       await TTS.speak(reply);
     },
     onFailure: (error) => {
@@ -454,13 +788,28 @@ function bindChat() {
   });
   $('#chatEnd').addEventListener('click', endChat);
 }
- 
-function addMsg(box, [who, text]) {
+
+function addMsg(box, [who, text, meta], turnIdx = null) {
   const d = document.createElement('div');
-  d.className = 'msg ' + who; d.dataset.text = text;
-  d.innerHTML = `<small>${who === 'ai' ? 'Assistant' : 'Caller'}</small>${esc(text)}`;
-  if (who === 'ai' && TTS.ok) d.insertAdjacentHTML('beforeend', '<button class="btn" type="button" data-speak style="margin-top:6px;padding:4px 10px;font-size:.8rem">Replay</button>');
-  box.appendChild(d); box.scrollTop = box.scrollHeight;
+  d.className = 'msg ' + who;
+  d.dataset.text = text;
+  if (turnIdx !== null) d.dataset.turnIdx = String(turnIdx);
+  const speakerLabel = who === 'ai' ? 'Assistant' : 'Caller';
+  let metaHtml = '';
+  if (meta && meta.sentiment) {
+    metaHtml = ` <span class="tag tag-sentiment ${meta.sentiment.toLowerCase()}" style="font-size:0.68rem;padding:1px 6px;margin-left:6px">${esc(meta.sentiment)}${meta.stress_level != null ? ' ' + meta.stress_level + '%' : ''}</span>`;
+  }
+  d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><small>${speakerLabel}${metaHtml}</small></div><div class="msg-content">${esc(text)}</div>`;
+  const replayBtn = document.createElement('button');
+  replayBtn.className = 'btn';
+  replayBtn.type = 'button';
+  replayBtn.dataset.speak = 'true';
+  if (turnIdx !== null) replayBtn.dataset.turnIdx = String(turnIdx);
+  replayBtn.style.cssText = 'margin-top:6px;padding:3px 8px;font-size:0.75rem';
+  replayBtn.textContent = '▶ Play';
+  d.appendChild(replayBtn);
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
   return d;
 }
 function scheduleCompletionRetry(callId, delay) {
@@ -559,7 +908,10 @@ function finish(outcome, lines, event) {
     summary: a.summary || '', intent: a.intent, urgency: a.urgency, risk: a.risk,
     reviewRequired: a.reviewRequired, suggestedAction: a.suggestedAction,
     sensitiveInfoRequested: a.sensitiveInfoRequested,
-    outcome, transcript: savedTranscript
+    outcome, transcript: savedTranscript,
+    trajectory: a.trajectory || [],
+    sentiment: a.sentiment || (a.risk === 'High' ? 'Aggressive' : 'Neutral'),
+    stress_level: a.stress_level ?? (a.risk === 'High' ? 85 : 25)
   });
   state.calls = state.calls.slice(0, 30);
   selectedCall = a.id; active = null; save();
@@ -578,9 +930,19 @@ function mapDbCall(c) {
     timeStr = c.started_at || '';
   }
   const transcript = [];
-  turns.forEach(t => {
-    if (t.caller_message) transcript.push(['caller', t.caller_message]);
-    if (t.reply) transcript.push(['ai', t.reply]);
+  const trajectory = [];
+  turns.forEach((t, idx) => {
+    const meta = {
+      sentiment: t.sentiment || (idx === 0 && (t.risk === 'High' || c.intent === 'Possible scam') ? 'Aggressive' : 'Neutral'),
+      stress_level: t.stress_level ?? (idx === 0 && (t.risk === 'High' || c.intent === 'Possible scam') ? 80 : 35)
+    };
+    if (t.caller_message) {
+      transcript.push(['caller', t.caller_message, meta]);
+      trajectory.push({ turn: trajectory.length + 1, sentiment: meta.sentiment, stress: meta.stress_level });
+    }
+    if (t.reply) {
+      transcript.push(['ai', t.reply, { sentiment: 'Neutral' }]);
+    }
   });
   return {
     id: c.id,
@@ -589,7 +951,11 @@ function mapDbCall(c) {
     summary: lastTurn ? lastTurn.summary : (turns.length ? '' : 'Call ended before conversation.'),
     reason: lastTurn ? lastTurn.summary : '',
     outcome: c.outcome || 'In progress',
-    transcript: transcript.length ? transcript : [['ai', 'No conversation turns recorded.']]
+    transcript: transcript.length ? transcript : [['ai', 'No conversation turns recorded.']],
+    trajectory,
+    risk: lastTurn?.risk || 'Low',
+    sentiment: lastTurn?.sentiment || (trajectory.length ? trajectory[trajectory.length - 1].sentiment : 'Neutral'),
+    stress_level: lastTurn?.stress_level ?? (trajectory.length ? trajectory[trajectory.length - 1].stress : 25)
   };
 }
 
@@ -627,20 +993,78 @@ function renderDecision() {
     ? RECOMMENDATION_LABEL[active.decision.recommendation]
     : ACTION_LABEL[active.decision.action];
   $('#dWhy').textContent = active.decision.why;
+
+  // Sentiment & Stress Meter updates
+  const sentiment = active.sentiment || (active.risk === 'High' ? 'Aggressive' : active.urgency === 'High' ? 'Frustrated' : 'Neutral');
+  const dSent = $('#dSentiment');
+  if (dSent) {
+    dSent.textContent = sentiment;
+    dSent.className = `tag tag-sentiment ${sentiment.toLowerCase()}`;
+  }
+  const stress = active.stress_level ?? (active.risk === 'High' ? 85 : active.urgency === 'High' ? 65 : 25);
+  const bar = $('#dStressBar');
+  const val = $('#dStressVal');
+  if (bar) {
+    bar.style.width = `${Math.min(100, Math.max(0, stress))}%`;
+    bar.style.backgroundColor = stress >= 70 ? '#ff5c7a' : stress >= 40 ? '#ffb84d' : '#27e8ff';
+  }
+  if (val) val.textContent = `${stress}/100`;
 }
+
 function renderCalls() {
   const list = $('#callList');
   if (!state.calls.length) {
     list.innerHTML = '<div class="empty"><p>No calls yet.</p><button class="btn pri" data-act="simulate">Simulate incoming call</button></div>';
     $('#transcript').innerHTML = '<div class="empty">Nothing to show.</div>';
+    AudioPlayer.loadCall(null);
     return;
   }
   if (!state.calls.find(c => c.id === selectedCall)) selectedCall = state.calls[0].id;
-  list.innerHTML = state.calls.map(c => `<div class="item ${c.id === selectedCall ? 'sel' : ''}" data-call="${c.id}" tabindex="0"><div><b>${esc(c.name)}</b><small>${esc(c.summary || c.reason || 'No summary')}</small></div><div><span class="tag">${esc(c.outcome)}</span><small>${esc(c.time)}</small></div></div>`).join('');
+  list.innerHTML = state.calls.map(c => `
+    <div class="item ${c.id === selectedCall ? 'sel' : ''}" data-call="${c.id}" tabindex="0">
+      <div><b>${esc(c.name)}</b><small>${esc(c.summary || c.reason || 'No summary')}</small></div>
+      <div><span class="tag">${esc(c.outcome)}</span><small>${esc(c.time)}</small></div>
+    </div>
+  `).join('');
   const c = state.calls.find(x => x.id === selectedCall), box = $('#transcript');
   box.innerHTML = '';
   if (c && c.transcript) {
-    c.transcript.forEach(l => addMsg(box, l));
+    c.transcript.forEach((l, idx) => addMsg(box, l, idx));
+  }
+  AudioPlayer.loadCall(c);
+
+  // Emotional & Stress Trajectory
+  const trajBox = $('#callSentimentTrajectory');
+  const trajTimeline = $('#trajTimeline');
+  const trajSummary = $('#trajSummary');
+  if (trajBox && trajTimeline && trajSummary) {
+    const trajectory = (c && c.trajectory && c.trajectory.length) ? c.trajectory : [];
+    if (trajectory.length > 0) {
+      trajBox.hidden = false;
+      const first = trajectory[0].sentiment;
+      const last = trajectory[trajectory.length - 1].sentiment;
+      trajSummary.textContent = trajectory.length > 1 ? `${first} ➔ ${last}` : `${first} (Stable)`;
+      trajTimeline.innerHTML = trajectory.map((node, i) => `
+        <div class="traj-node ${node.sentiment.toLowerCase()}">
+          <span class="traj-badge">${esc(node.sentiment)}</span>
+          <small class="traj-stress">${node.stress}% stress</small>
+        </div>
+        ${i < trajectory.length - 1 ? '<span class="traj-arrow" style="color:var(--mut);font-size:0.75rem">➔</span>' : ''}
+      `).join('');
+    } else if (c && c.transcript && c.transcript.length) {
+      trajBox.hidden = false;
+      const sent = c.risk === 'High' ? 'Aggressive' : 'Neutral';
+      const stress = c.risk === 'High' ? 85 : 25;
+      trajSummary.textContent = `${sent} (Detected)`;
+      trajTimeline.innerHTML = `
+        <div class="traj-node ${sent.toLowerCase()}">
+          <span class="traj-badge">${sent}</span>
+          <small class="traj-stress">${stress}% stress</small>
+        </div>
+      `;
+    } else {
+      trajBox.hidden = true;
+    }
   }
 }
 function renderContacts() {
@@ -971,13 +1395,115 @@ function applyMotion() {
   if (reduced) { stop(); kick(); } else start();
 }
  
+/* ---------- Knowledge Vault & Caller CRM ---------- */
+async function loadVault() {
+  try {
+    const res = await Auth.fetch(`${API}/vault`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = $('#vaultList');
+    if (!list) return;
+    if (!data.rules || !data.rules.length) {
+      list.innerHTML = '<div class="empty"><p>No custom vault rules set yet. Add preferences or policies above.</p></div>';
+      return;
+    }
+    list.innerHTML = data.rules.map(r => `
+      <div class="vault-card" data-rule="${r.id}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin-bottom:8px;background:rgba(255,255,255,0.04);border-radius:12px;border:1px solid var(--line);gap:12px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span class="tag vault-cat-badge ${r.category}" style="font-size:0.72rem;text-transform:capitalize">${esc(r.category)}</span>
+            <small class="muted" style="font-size:0.75rem">${new Date(r.created_at).toLocaleDateString()}</small>
+          </div>
+          <p style="margin:0;font-size:0.92rem;color:var(--tx)">${esc(r.rule_text)}</p>
+        </div>
+        <div class="mini" style="display:flex;gap:6px">
+          <button class="btn ${r.is_active ? 'btn-active' : ''}" data-toggle-vault="${r.id}" type="button" style="padding:4px 10px;font-size:0.78rem">
+            ${r.is_active ? 'Active' : 'Paused'}
+          </button>
+          <button class="btn danger" data-del-vault="${r.id}" type="button" style="padding:4px 8px;font-size:0.78rem">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error('Failed to load vault rules:', e);
+  }
+}
+
+async function loadCRM() {
+  try {
+    const res = await Auth.fetch(`${API}/crm`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = $('#crmList');
+    if (!list) return;
+    if (!data.contacts || !data.contacts.length) {
+      list.innerHTML = '<div class="empty"><p>No recurring caller memories recorded yet. The agent logs caller details as conversations occur.</p></div>';
+      return;
+    }
+    list.innerHTML = data.contacts.map(c => `
+      <div class="crm-card" style="padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.04);border-radius:12px;border:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <b>${esc(c.caller_name)}</b>
+          <span class="tag">${esc(c.relationship || 'Contact')}</span>
+        </div>
+        <div style="font-size:0.8rem;color:var(--mut);margin-bottom:8px">
+          Last active: ${c.last_call_at ? new Date(c.last_call_at).toLocaleString() : 'Recently'}
+        </div>
+        <label style="font-size:0.8rem;color:var(--mut);display:block;margin-bottom:4px">Caller Memory & Notes:</label>
+        <div style="display:flex;gap:8px">
+          <input class="crm-notes-input" data-caller="${esc(c.caller_name)}" value="${esc(c.notes || '')}" placeholder="e.g., Dr. Patel following up on Tuesday test results" style="flex:1">
+          <button class="btn btn-save-crm" data-caller="${esc(c.caller_name)}" type="button" style="padding:6px 12px;font-size:0.8rem">Save</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error('Failed to load CRM:', e);
+  }
+}
+
+async function checkNvidiaStatus() {
+  const tag = $('#nvStatusTag');
+  const text = $('#nvStatusText');
+  if (!tag || !text) return;
+  try {
+    const res = await Auth.fetch(`${API}/tts/status`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (data.nvidia_configured || data.nvidia_api_configured) {
+      window.CGAI_NVIDIA_ONLINE = true;
+      tag.textContent = 'Connected (NVIDIA NIM)';
+      tag.className = 'tag';
+      tag.style.background = 'rgba(61,255,168,0.15)';
+      tag.style.color = '#3dffa8';
+      tag.style.borderColor = 'rgba(61,255,168,0.4)';
+      text.textContent = `Model: ${data.model} · Ready for speech synthesis`;
+    } else {
+      tag.textContent = 'Fallback (Web Speech)';
+      tag.className = 'tag';
+      tag.style.background = 'rgba(255,184,77,0.15)';
+      tag.style.color = '#ffb84d';
+      tag.style.borderColor = 'rgba(255,184,77,0.4)';
+      text.textContent = 'NVIDIA_API_KEY not configured in .env. Using browser natural voices.';
+    }
+  } catch (err) {
+    tag.textContent = 'Offline';
+    text.textContent = 'Could not query TTS engine status.';
+  }
+}
+
 /* ---------- Wire up events ---------- */
 function bind() {
   document.addEventListener('click', e => {
     const exp = e.target.closest('[data-export]');
     if (exp) { exportData(exp.dataset.export); return; }
     const sp = e.target.closest('[data-speak]');
-    if (sp) { TTS.speak(sp.closest('.msg').dataset.text, true); return; }
+    if (sp) {
+      if (sp.dataset.turnIdx !== undefined) {
+        AudioPlayer.seekToTurn(+sp.dataset.turnIdx);
+      } else {
+        TTS.speak(sp.closest('.msg').dataset.text, true);
+      }
+      return;
+    }
     const a = e.target.closest('[data-act]');
     if (a) { const k = a.dataset.act; if (k === 'simulate') { if (!$('#overview').classList.contains('on')) go('overview'); simulate(); } else act(k, e); return; }
     const c = e.target.closest('[data-call]');
@@ -986,7 +1512,42 @@ function bind() {
     if (ed) { const k = state.contacts.find(x => x.id === +ed.dataset.edit); if (k) { $('#fId').value = k.id; $('#fName').value = k.name; $('#fNum').value = k.number; $('#fType').value = k.type; $('#fPref').value = k.pref; $('#formTitle').textContent = 'Edit contact'; $('#fName').focus(); } return; }
     const del = e.target.closest('[data-del]');
     if (del) { state.contacts = state.contacts.filter(x => x.id !== +del.dataset.del); save(); renderContacts(); toast('Contact deleted'); return; }
+
+    const togV = e.target.closest('[data-toggle-vault]');
+    if (togV) {
+      const id = +togV.dataset.toggleVault;
+      Auth.fetch(`${API}/vault/${id}/toggle`, { method: 'POST' }).then(() => {
+        loadVault();
+        toast('Vault rule updated');
+      }).catch(() => toast('Could not toggle rule', true));
+      return;
+    }
+
+    const delV = e.target.closest('[data-del-vault]');
+    if (delV) {
+      const id = +delV.dataset.delVault;
+      Auth.fetch(`${API}/vault/${id}`, { method: 'DELETE' }).then(() => {
+        loadVault();
+        toast('Vault rule deleted');
+      }).catch(() => toast('Could not delete rule', true));
+      return;
+    }
+
+    const saveCrm = e.target.closest('.btn-save-crm');
+    if (saveCrm) {
+      const caller = saveCrm.dataset.caller;
+      const input = document.querySelector(`.crm-notes-input[data-caller="${caller}"]`);
+      if (input) {
+        Auth.fetch(`${API}/crm`, {
+          method: 'POST',
+          body: JSON.stringify({ caller_name: caller, notes: input.value.trim(), relationship: 'Contact' })
+        }).then(() => toast(`Saved memory notes for ${caller}`))
+          .catch(() => toast('Could not save CRM notes', true));
+      }
+      return;
+    }
   });
+
   $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.go); });
   $('#agentToggle').addEventListener('change', e => { setAgent(e.target.checked); toast(e.target.checked ? 'Agent Mode on' : 'Agent Mode off'); });
   // Logout
@@ -999,6 +1560,43 @@ function bind() {
   $('#ruleList').addEventListener('change', e => { const k = e.target.dataset.rule; if (k) { state.rules[k] = e.target.checked; save(); toast('Rule updated'); } });
   $('#setMotion')?.addEventListener('change', e => { state.reduce = e.target.checked; save(); applyMotion(); });
   $('#setVoice')?.addEventListener('change', e => { state.voice = e.target.value; save(); toast('Voice style: ' + e.target.value); });
+
+  $('#vaultForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const category = $('#vCategory').value;
+    const rule_text = $('#vText').value.trim();
+    if (!rule_text) return;
+    try {
+      const res = await Auth.fetch(`${API}/vault`, {
+        method: 'POST',
+        body: JSON.stringify({ category, rule_text })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      $('#vText').value = '';
+      loadVault();
+      toast('Rule added to Personal Knowledge Vault');
+    } catch (err) {
+      toast('Failed to add vault rule: ' + err.message, true);
+    }
+  });
+
+  $('#testVoiceBtn')?.addEventListener('click', () => {
+    TTS.speak('Hello! This is CallGuardian AI powered by NVIDIA voice synthesis.', true);
+  });
+  $('#sVoice')?.addEventListener('change', e => {
+    state.nvidiaVoice = e.target.value;
+    save();
+    toast('NVIDIA voice persona updated');
+  });
+  $('#autoMicSend')?.addEventListener('change', e => {
+    state.autoMicSend = e.target.checked;
+    save();
+  });
+  $('#voicePlayback')?.addEventListener('change', e => {
+    state.voicePlayback = e.target.checked;
+    save();
+  });
+
   $('#resetData')?.addEventListener('click', () => { TTS.stop(); timers.forEach(clearTimeout); active = null; state = DEFAULTS(); save(); init(); toast('Demo data reset'); });
   addEventListener('resize', () => { initBg(); resizeOrb(); kick(); });
   document.addEventListener('visibilitychange', () => document.hidden ? stop() : applyMotion());
@@ -1006,17 +1604,423 @@ function bind() {
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', applyMotion);
 }
 
+/* ═════════════════════════════════════════════════════════════════════
+   Lenis Smooth Scrolling & Anime.js Kinetic Engine
+   ═════════════════════════════════════════════════════════════════════ */
+let lenisInstance = null;
+function initLenis() {
+  if (typeof window.Lenis === 'undefined') return;
+  try {
+    lenisInstance = new window.Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+      smoothTouch: false,
+      direction: 'vertical'
+    });
+    function raf(time) {
+      if (lenisInstance) lenisInstance.raf(time);
+      requestAnimationFrame(raf);
+    }
+    requestAnimationFrame(raf);
+  } catch (err) {
+    console.warn('Lenis initialization notice:', err);
+  }
+}
+
+let metricsAnimated = false;
+function animateMetricCounters(force = false) {
+  if (metricsAnimated && !force) return;
+  metricsAnimated = true;
+  if (typeof window.anime === 'undefined') return;
+
+  const scam = $('#metricScam');
+  if (scam) {
+    const scamObj = { val: 0 };
+    anime({
+      targets: scamObj,
+      val: 99.8,
+      round: 10,
+      duration: 1800,
+      easing: 'easeOutExpo',
+      update: () => { scam.textContent = scamObj.val.toFixed(1); }
+    });
+  }
+
+  const latency = $('#metricLatency');
+  if (latency) {
+    const latObj = { val: 800 };
+    anime({
+      targets: latObj,
+      val: 240,
+      round: 1,
+      duration: 1600,
+      easing: 'easeOutExpo',
+      update: () => { latency.textContent = Math.round(latObj.val); }
+    });
+  }
+
+  const rag = $('#metricRAG');
+  if (rag) {
+    const ragObj = { val: 0 };
+    anime({
+      targets: ragObj,
+      val: 100,
+      round: 1,
+      duration: 1700,
+      easing: 'easeOutExpo',
+      update: () => { rag.textContent = Math.round(ragObj.val); }
+    });
+  }
+
+  const uptime = $('#metricUptime');
+  if (uptime) {
+    const upObj = { val: 0 };
+    anime({
+      targets: upObj,
+      val: 24,
+      round: 1,
+      duration: 1400,
+      easing: 'easeOutExpo',
+      update: () => { uptime.textContent = Math.round(upObj.val); }
+    });
+  }
+}
+
+function initDraggableThreatDial() {
+  const track = $('#threatTrack');
+  const handle = $('#threatHandle');
+  const fill = $('#threatFill');
+  const badge = $('#threatLevelBadge');
+  const statusText = $('#threatStatusText');
+  const morphCore = $('#heroMorphShape');
+  if (!track || !handle) return;
+
+  let isDragging = false;
+  let currentPct = 24;
+
+  function updateThreatUI(pct, withSpring = false) {
+    currentPct = Math.max(0, Math.min(100, pct));
+    handle.style.left = `${currentPct}%`;
+    fill.style.width = `${currentPct}%`;
+    handle.setAttribute('aria-valuenow', Math.round(currentPct));
+
+    if (currentPct <= 35) {
+      badge.className = 'threat-badge safe';
+      badge.textContent = `NORMAL (${Math.round(currentPct)}%)`;
+      statusText.textContent = 'Passive Screening: Legitimate calls pass in <180ms';
+      if (morphCore) morphCore.setAttribute('stroke', '#3dffa8');
+    } else if (currentPct <= 70) {
+      badge.className = 'threat-badge elevated';
+      badge.textContent = `ELEVATED (${Math.round(currentPct)}%)`;
+      statusText.textContent = 'Active Interrogation: Requiring caller identity verification';
+      if (morphCore) morphCore.setAttribute('stroke', '#ffbb27');
+    } else {
+      badge.className = 'threat-badge critical';
+      badge.textContent = `CRITICAL (${Math.round(currentPct)}%)`;
+      statusText.textContent = 'Emergency Defense: Auto-dropping spoofed VoIP bots & scam scripts';
+      if (morphCore) morphCore.setAttribute('stroke', '#ff5c7a');
+    }
+
+    if (withSpring && typeof window.anime !== 'undefined') {
+      anime({
+        targets: handle,
+        scale: [1.25, 1],
+        duration: 500,
+        easing: 'spring(1, 80, 10, 0)'
+      });
+      anime({
+        targets: badge,
+        scale: [1.12, 1],
+        duration: 400,
+        easing: 'spring(1, 90, 10, 0)'
+      });
+    }
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const rect = track.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const pct = ((clientX - rect.left) / rect.width) * 100;
+    updateThreatUI(pct, false);
+  }
+
+  function onPointerUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+    updateThreatUI(currentPct, true);
+  }
+
+  handle.addEventListener('pointerdown', (e) => {
+    isDragging = true;
+    e.preventDefault();
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
+  });
+
+  track.addEventListener('click', (e) => {
+    const rect = track.getBoundingClientRect();
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    updateThreatUI(pct, true);
+  });
+
+  handle.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      updateThreatUI(currentPct + 5, true);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      updateThreatUI(currentPct - 5, true);
+    }
+  });
+
+  updateThreatUI(24, false);
+}
+
+function initScrollObserver() {
+  if (typeof window.IntersectionObserver === 'undefined') {
+    animateMetricCounters();
+    return;
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        if (entry.target.classList.contains('hero-metrics-grid') || entry.target.dataset.metric) {
+          animateMetricCounters();
+          if (typeof window.anime !== 'undefined') {
+            anime({
+              targets: '.metric-card',
+              opacity: [0, 1],
+              translateY: [35, 0],
+              scale: [0.93, 1],
+              delay: anime.stagger(100, { start: 100, from: 'first' }),
+              duration: 750,
+              easing: 'easeOutCubic'
+            });
+          }
+        }
+        if (entry.target.classList.contains('hero-pipeline-showcase')) {
+          if (typeof window.anime !== 'undefined') {
+            anime({
+              targets: '.stagger-step',
+              opacity: [0, 1],
+              translateY: [30, 0],
+              delay: anime.stagger(120, { start: 150, from: 'first' }),
+              duration: 700,
+              easing: 'easeOutCubic'
+            });
+          }
+        }
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+
+  const metricsGrid = $('.hero-metrics-grid');
+  if (metricsGrid) observer.observe(metricsGrid);
+  const pipelineShowcase = $('.hero-pipeline-showcase');
+  if (pipelineShowcase) observer.observe(pipelineShowcase);
+}
+
+function initInteractiveCardsMotion() {
+  if (typeof window.anime === 'undefined') return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  if (!isMobile) {
+    $$('.metric-card, .pipeline-step-card').forEach(card => {
+      card.addEventListener('mouseenter', () => {
+        anime({
+          targets: card,
+          translateY: -6,
+          rotateX: 4,
+          scale: 1.025,
+          duration: 400,
+          easing: 'spring(1, 80, 12, 0)'
+        });
+      });
+      card.addEventListener('mouseleave', () => {
+        anime({
+          targets: card,
+          translateY: 0,
+          rotateX: 0,
+          scale: 1,
+          duration: 500,
+          easing: 'spring(1, 90, 10, 0)'
+        });
+      });
+    });
+  }
+}
+
+function initAnimeHero() {
+  if (typeof window.anime === 'undefined') return;
+
+  // 1. TIMELINE API: Hero Entrance Timeline
+  const heroTl = anime.timeline({
+    easing: 'easeOutExpo',
+    duration: 800
+  });
+
+  heroTl
+    .add({
+      targets: '.hero-badge-pill',
+      opacity: [0, 1],
+      translateY: [-24, 0],
+      duration: 600
+    })
+    .add({
+      targets: '.hero-word',
+      opacity: [0, 1],
+      translateY: [32, 0],
+      rotateX: [25, 0],
+      delay: anime.stagger(50),
+      duration: 650
+    }, '-=350')
+    .add({
+      targets: '.hero-lead-text',
+      opacity: [0, 1],
+      translateY: [20, 0],
+      duration: 550
+    }, '-=350')
+    .add({
+      targets: '.hero-cta-btn',
+      opacity: [0, 1],
+      translateY: [16, 0],
+      scale: [0.92, 1],
+      delay: anime.stagger(80),
+      duration: 700,
+      easing: 'spring(1, 80, 10, 0)'
+    }, '-=350')
+    .add({
+      targets: '.hero-interactive-stage',
+      opacity: [0, 1],
+      translateY: [28, 0],
+      duration: 750
+    }, '-=300');
+
+  $('#heroReplayTimelineBtn')?.addEventListener('click', () => {
+    heroTl.restart();
+    animateMetricCounters(true);
+  });
+
+  $('#heroLaunchSimBtn')?.addEventListener('click', () => {
+    go('overview');
+  });
+  $('#heroQuickMicBtn')?.addEventListener('click', () => {
+    go('overview');
+    setTimeout(() => {
+      const mic = $('#micBtn');
+      if (mic) {
+        mic.focus();
+        mic.click();
+      }
+    }, 300);
+  });
+
+  // 2. LINE DRAWING: SVG Circuit paths
+  anime({
+    targets: '.line-draw-path',
+    strokeDashoffset: [anime.setDashoffset, 0],
+    easing: 'easeInOutSine',
+    duration: 3200,
+    delay: function(el, i) { return i * 350; },
+    direction: 'alternate',
+    loop: true
+  });
+
+  // 3. SHAPE MORPHING: Central Morph Core Path
+  const SHAPES = {
+    shield: 'M 100,20 C 145,20 180,45 180,95 C 180,145 140,175 100,190 C 60,175 20,145 20,95 C 20,45 55,20 100,20 Z',
+    wave: 'M 100,30 C 160,35 175,85 140,110 C 185,135 155,180 100,165 C 45,180 15,135 60,110 C 25,85 40,35 100,30 Z',
+    vault: 'M 100,20 C 150,20 165,60 165,100 C 165,140 150,180 100,180 C 50,180 35,140 35,100 C 35,60 50,20 100,20 Z'
+  };
+
+  const morphBtns = $$('.morph-btn');
+  morphBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      morphBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const shape = btn.dataset.shape;
+      if (SHAPES[shape]) {
+        anime({
+          targets: '#heroMorphShape',
+          d: [{ value: SHAPES[shape] }],
+          easing: 'easeInOutQuint',
+          duration: 900
+        });
+        anime({
+          targets: '#heroMorphShape',
+          scale: [0.94, 1.03, 1],
+          easing: 'spring(1, 80, 10, 0)',
+          duration: 700
+        });
+      }
+    });
+  });
+
+  // 4. MOTION PATHS: Signal Packets traveling along curved SVG spline
+  const motionPath = anime.path('#signalMotionPath');
+  if (motionPath) {
+    anime({
+      targets: '#signalPacket1',
+      translateX: motionPath('x'),
+      translateY: motionPath('y'),
+      rotate: motionPath('angle'),
+      easing: 'linear',
+      duration: 3800,
+      loop: true
+    });
+    anime({
+      targets: '#signalPacket2',
+      translateX: motionPath('x'),
+      translateY: motionPath('y'),
+      rotate: motionPath('angle'),
+      easing: 'linear',
+      duration: 4500,
+      delay: 1100,
+      loop: true
+    });
+    anime({
+      targets: '#signalPacket3',
+      translateX: motionPath('x'),
+      translateY: motionPath('y'),
+      rotate: motionPath('angle'),
+      easing: 'linear',
+      duration: 5200,
+      delay: 2400,
+      loop: true
+    });
+  }
+
+  initDraggableThreatDial();
+  initScrollObserver();
+  initInteractiveCardsMotion();
+}
+
 /* ---------- Init ---------- */
 function init() {
   setPhase('idle'); setAgent(state.agentOn, true);
   const voiceSetting = $('#setVoice');
   if (voiceSetting) voiceSetting.value = state.voice;
+  const sVoice = $('#sVoice');
+  if (sVoice) sVoice.value = state.nvidiaVoice || 'alloy';
+  const autoMic = $('#autoMicSend');
+  if (autoMic) autoMic.checked = state.autoMicSend !== false;
+  const vp = $('#voicePlayback');
+  if (vp) vp.checked = state.voicePlayback !== false;
+
   renderCall(); renderDecision(); renderCalls(); renderContacts(); renderRules(); updateStats(false);
-  loadCalls(); loadAnalytics();
+  loadCalls(); loadAnalytics(); checkNvidiaStatus();
   pendingCompletions.forEach((_, callId) => retryCompletion(callId, true));
-  go('overview'); applyMotion();
+  initLenis();
+  initAnimeHero();
+  go('heroLanding'); applyMotion();
 }
-bind(); initBg(); initTilt(); initOrb(); TTS.init(); bindChat(); init();
+bind(); initBg(); initTilt(); initOrb(); TTS.init(); MicInput.init(); AudioPlayer.init(); bindChat(); init();
 Auth.init();   // load /auth/me → populate user panel
 addEventListener('online', () => pendingCompletions.forEach((_, callId) => retryCompletion(callId)));
 setInterval(checkSchedule, 20000); checkSchedule();

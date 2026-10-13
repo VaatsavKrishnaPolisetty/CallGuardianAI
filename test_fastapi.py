@@ -156,3 +156,51 @@ def test_missing_gemini_key_is_an_explicit_service_error(client, monkeypatch):
     token = client.cookies.get("cgai_csrf")
     response = client.post("/chat", headers={"X-CSRF-Token": token}, json={"message": "Hello"})
     assert response.status_code == 503
+
+
+def test_vault_crm_and_tts_endpoints(client):
+    assert register(client, "vaultuser", "vaultuser@example.test").status_code == 201
+    assert login(client, "vaultuser").status_code == 200
+    token = client.cookies.get("cgai_csrf")
+
+    # Vault
+    vault_res = client.get("/vault")
+    assert vault_res.status_code == 200
+    assert len(vault_res.json()["rules"]) >= 4
+
+    add_res = client.post("/vault", headers={"X-CSRF-Token": token}, json={
+        "category": "preference",
+        "rule_text": "Do not accept loan promotions."
+    })
+    assert add_res.status_code == 201
+    rule_id = add_res.json()["id"]
+
+    toggle_res = client.post(f"/vault/{rule_id}/toggle", headers={"X-CSRF-Token": token})
+    assert toggle_res.status_code == 200
+
+    del_res = client.delete(f"/vault/{rule_id}", headers={"X-CSRF-Token": token})
+    assert del_res.status_code == 200
+
+    # CRM
+    crm_res = client.get("/crm")
+    assert crm_res.status_code == 200
+    assert len(crm_res.json()["contacts"]) >= 3
+
+    save_crm = client.post("/crm", headers={"X-CSRF-Token": token}, json={
+        "caller_name": "Dr. Patel",
+        "relationship": "Doctor",
+        "notes": "Discussed appointment on Tuesday"
+    })
+    assert save_crm.status_code == 200
+
+    # TTS status and fallback
+    tts_status = client.get("/tts/status")
+    assert tts_status.status_code == 200
+
+    tts_res = client.post("/tts", headers={"X-CSRF-Token": token}, json={"text": "Hello"})
+    assert tts_res.status_code == 200
+    if tts_res.headers.get("content-type", "").startswith("audio/"):
+        assert len(tts_res.content) > 100
+    else:
+        assert "fallback_to_browser" in tts_res.json()
+

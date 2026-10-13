@@ -90,6 +90,27 @@ CREATE TABLE IF NOT EXISTS captcha_challenges (
     used       INTEGER NOT NULL DEFAULT 0 CHECK (used IN (0, 1))
 );
 CREATE INDEX IF NOT EXISTS idx_captcha_expires ON captcha_challenges(expires_at);
+
+CREATE TABLE IF NOT EXISTS knowledge_vault (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category   TEXT NOT NULL DEFAULT 'preference', -- 'preference', 'faq', 'instruction'
+    rule_text  TEXT NOT NULL,
+    is_active  INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vault_user ON knowledge_vault(user_id);
+
+CREATE TABLE IF NOT EXISTS caller_crm (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    caller_name  TEXT NOT NULL COLLATE NOCASE,
+    relationship TEXT NOT NULL DEFAULT 'General',
+    notes        TEXT NOT NULL DEFAULT '',
+    last_call_at TEXT,
+    UNIQUE (user_id, caller_name)
+);
+CREATE INDEX IF NOT EXISTS idx_crm_user_caller ON caller_crm(user_id, caller_name);
 """
 
 # ── Migration: add user_id column to pre-existing calls table ─────────────────
@@ -145,6 +166,12 @@ def init_db() -> None:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(calls)")}
         if "user_id" not in existing:
             conn.execute(_MIGRATION_ADD_USER_ID)
+        # Migration: add sentiment and stress_level to turns if missing
+        turns_cols = {row[1] for row in conn.execute("PRAGMA table_info(turns)")}
+        if "sentiment" not in turns_cols:
+            conn.execute("ALTER TABLE turns ADD COLUMN sentiment TEXT DEFAULT 'Neutral'")
+        if "stress_level" not in turns_cols:
+            conn.execute("ALTER TABLE turns ADD COLUMN stress_level INTEGER DEFAULT 20")
         # Purge expired captcha rows on startup to keep the table small
         conn.execute(
             "DELETE FROM captcha_challenges WHERE expires_at < ?", (_now(),)
@@ -359,18 +386,21 @@ def save_turn(call_id: int, caller_message: str, analysis: dict, source: str,
         turn_no = conn.execute(
             "SELECT COALESCE(MAX(turn_no), 0) + 1 FROM turns WHERE call_id = ?", (int(call_id),)
         ).fetchone()[0]
+        sentiment = str(analysis.get("sentiment") or "Neutral")[:50]
+        stress_level = int(analysis.get("stress_level") if analysis.get("stress_level") is not None else 20)
         cur = conn.execute(
             """INSERT INTO turns (call_id, turn_no, caller_message, reply, summary, intent, urgency, risk,
                                   review_required, suggested_action, sensitive_info_requested, source,
-                                  latency_ms, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                  latency_ms, created_at, sentiment, stress_level)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (int(call_id), turn_no,
              REDACTED_CALLER_MESSAGE if source == "rule_sensitive" else caller_message[:2000],
              analysis["reply"][:4000], analysis["summary"][:1000],
              analysis["intent"][:200], analysis["urgency"], analysis["risk"],
              int(bool(analysis["review_required"])), analysis["suggested_action"],
              int(bool(analysis["sensitive_info_requested"])), source,
-             int(latency_ms) if latency_ms is not None else None, _now()),
+             int(latency_ms) if latency_ms is not None else None, _now(),
+             sentiment, stress_level),
         )
         return cur.lastrowid
 
@@ -609,3 +639,142 @@ def to_csv(rows: list[dict], columns: list[str]) -> str:
     for r in rows:
         w.writerow([csv_cell(r.get(c)) for c in columns])
     return "\ufeff" + buf.getvalue()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Knowledge Vault & Caller CRM
+# ══════════════════════════════════════════════════════════════════════════════
+
+def ensure_default_vault_rules(user_id: int) -> None:
+    defaults = [
+        ("preference", "I never accept sales pitches or promotional marketing calls."),
+        ("instruction", "My delivery package drop-off is behind the blue gate on the driveway."),
+        ("faq", "If a prospective client inquires about my consulting rates, quote $100/hr minimum."),
+        ("preference", "For personal appointment bookings, I am only free on weekday mornings before 11 AM.")
+    ]
+    with _conn() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM knowledge_vault WHERE user_id = ?", (int(user_id),)).fetchone()[0]
+        if count == 0:
+            now = _now()
+            for cat, text in defaults:
+                conn.execute(
+                    "INSERT INTO knowledge_vault (user_id, category, rule_text, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+                    (int(user_id), cat, text, now)
+                )
+
+
+def get_vault_rules(user_id: int) -> list[dict]:
+    ensure_default_vault_rules(user_id)
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM knowledge_vault WHERE user_id = ? ORDER BY id ASC", (int(user_id),)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_vault_rule(user_id: int, category: str, rule_text: str) -> int:
+    category = (category or "preference").strip().lower()
+    rule_text = rule_text.strip()
+    if not rule_text:
+        raise ValueError("Rule text cannot be empty.")
+    now = _now()
+    with _conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO knowledge_vault (user_id, category, rule_text, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (int(user_id), category, rule_text, now)
+        )
+        return cur.lastrowid
+
+
+def delete_vault_rule(rule_id: int, user_id: int) -> bool:
+    with _conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM knowledge_vault WHERE id = ? AND user_id = ?",
+            (int(rule_id), int(user_id))
+        )
+        return cur.rowcount > 0
+
+
+def toggle_vault_rule(rule_id: int, user_id: int) -> bool:
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE knowledge_vault SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ? AND user_id = ?",
+            (int(rule_id), int(user_id))
+        )
+        return cur.rowcount > 0
+
+
+def ensure_default_crm(user_id: int) -> None:
+    defaults = [
+        ("Dr. Rao Clinic", "Doctor", "Dr. Rao's medical practice. Discussed appointment test results and scheduling follow-ups."),
+        ("Mom", "Family", "Family check-in. Loves weekend dinners and evening catch-ups."),
+        ("Telemarketer Block", "Spam", "Known unsolicited loan caller. Refuse and decline immediately.")
+    ]
+    with _conn() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM caller_crm WHERE user_id = ?", (int(user_id),)).fetchone()[0]
+        if count == 0:
+            now = _now()
+            for name, rel, note in defaults:
+                conn.execute(
+                    "INSERT OR IGNORE INTO caller_crm (user_id, caller_name, relationship, notes, last_call_at) VALUES (?, ?, ?, ?, ?)",
+                    (int(user_id), name, rel, note, now)
+                )
+
+
+def get_all_crm(user_id: int) -> list[dict]:
+    ensure_default_crm(user_id)
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM caller_crm WHERE user_id = ? ORDER BY caller_name ASC", (int(user_id),)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_caller_crm(user_id: int, caller_name: str) -> dict | None:
+    ensure_default_crm(user_id)
+    name = (caller_name or "").strip()
+    if not name:
+        return None
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM caller_crm WHERE user_id = ? AND caller_name = ? COLLATE NOCASE",
+            (int(user_id), name)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def save_caller_crm(user_id: int, caller_name: str, relationship: str, notes: str) -> None:
+    name = (caller_name or "").strip()
+    if not name:
+        return
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO caller_crm (user_id, caller_name, relationship, notes, last_call_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, caller_name) DO UPDATE SET
+                 relationship = excluded.relationship,
+                 notes = excluded.notes,
+                 last_call_at = excluded.last_call_at""",
+            (int(user_id), name, relationship.strip() or "General", notes.strip(), _now())
+        )
+
+
+def get_caller_history_context(user_id: int, caller_name: str) -> str:
+    crm = get_caller_crm(user_id, caller_name)
+    context_lines = []
+    if crm:
+        context_lines.append(f"Relationship: {crm['relationship']}")
+        if crm['notes']:
+            context_lines.append(f"Notes & Memory: {crm['notes']}")
+    # Query last 2 calls for this caller
+    with _conn() as conn:
+        past_calls = conn.execute(
+            """SELECT c.id, c.started_at, c.outcome, (SELECT summary FROM turns WHERE call_id = c.id ORDER BY turn_no DESC LIMIT 1) as last_summary
+               FROM calls c WHERE c.user_id = ? AND c.caller_name = ? COLLATE NOCASE ORDER BY c.started_at DESC LIMIT 2""",
+            (int(user_id), caller_name)
+        ).fetchall()
+        for pc in past_calls:
+            if pc["last_summary"]:
+                context_lines.append(f"Previous call ({pc['started_at'][:10]}): {pc['last_summary']} [Outcome: {pc['outcome'] or 'Ended'}]")
+    return "\n".join(context_lines)
+

@@ -6,7 +6,12 @@
 <title>CallGuardianAI — Personal Call Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&family=Sora:wght@500;700&display=swap" rel="stylesheet">
+<!-- Lenis Smooth Scroll CSS -->
+<link rel="stylesheet" href="https://unpkg.com/lenis@1.1.18/dist/lenis.css">
 <link rel="stylesheet" href="styles.css">
+<!-- Lenis Smooth Scroll & Anime.js CDN Libraries -->
+<script src="https://unpkg.com/lenis@1.1.18/dist/lenis.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 </head>
 <body data-agent="off" data-phase="idle">
 <canvas id="bg" aria-hidden="true"></canvas>
@@ -21,9 +26,11 @@
   <aside class="side glass">
     <div class="brand"><span class="logo"></span><b>CallGuardian<i>AI</i></b></div>
     <nav id="nav" aria-label="Sections">
-      <button data-go="overview" class="on">◉ Overview</button>
+      <button data-go="heroLanding" class="on">✦ Home</button>
+      <button data-go="overview">◉ Live Simulator</button>
       <button data-go="calls">☏ Calls</button>
-      <button data-go="contacts">☺ Contacts</button>
+      <button data-go="vault">✦ Knowledge Vault</button>
+      <button data-go="contacts">☺ Contacts & CRM</button>
       <button data-go="rules">⚙ Automation Rules</button>
       <button data-go="analytics">▤ Analytics</button>
       <button data-go="settings">✦ Settings</button>
@@ -38,15 +45,215 @@
 
   <main>
     <header class="top">
-      <div><h1 id="title">Overview</h1><p id="sub" class="muted"></p></div>
+      <div><h1 id="title">Home</h1><p id="sub" class="muted">Autonomous Voice Intelligence, Real-Time Scam Defense &amp; Knowledge Vault</p></div>
       <label class="switch glass" title="Toggle Agent Mode">
         <span id="agentLabel">Agent Mode off</span>
         <input type="checkbox" id="agentToggle"><span class="knob"></span>
       </label>
     </header>
 
+    <!-- HERO LANDING SHOWCASE -->
+    <section id="heroLanding" class="view on">
+      <div class="hero-landing-wrap">
+        
+        <!-- Hero Header Showcase -->
+        <div class="hero-showcase glass">
+          <div class="hero-badge-pill">
+            <span class="pulse-dot"></span>
+            <span class="hero-badge-text">POWERED BY NVIDIA NIM &amp; GEMINI 2.5 FLASH • SUB-250MS NEURAL DEFENSE</span>
+          </div>
+          <h1 class="hero-main-title">
+            <span class="hero-word">Autonomous</span>
+            <span class="hero-word">Voice</span>
+            <span class="hero-word">Defense</span>
+            <span class="hero-word">&amp;</span>
+            <span class="hero-word hero-gradient-text">Hyper-Intelligent</span>
+            <span class="hero-word">Call</span>
+            <span class="hero-word">Guardian</span>
+          </h1>
+          <p class="hero-lead-text">
+            Screens unknown callers, filters scam scripts with real-time AI reasoning, speaks with ultra-realistic neural human voices via NVIDIA NIM, and preserves context across every caller through the Personal Knowledge Vault.
+          </p>
+          <div class="hero-cta-group">
+            <button class="btn pri hero-cta-btn" id="heroLaunchSimBtn">
+              <span>⚡ Launch Live Simulator</span>
+            </button>
+            <button class="btn hero-cta-btn" id="heroQuickMicBtn">
+              <span>🎙️ Quick Mic Test</span>
+            </button>
+            <button class="btn hero-cta-btn" id="heroReplayTimelineBtn" title="Replay Anime.js timeline">
+              <span>↺ Replay Timeline</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Anime.js Interactive Neural Core Stage -->
+        <div class="hero-interactive-stage glass">
+          <div class="stage-header">
+            <div>
+              <h3>✦ Neural Security &amp; Morphing Core</h3>
+              <p class="muted">Live SVG Line Drawing, Vector Shape Morphing &amp; Motion Path Kinetics</p>
+            </div>
+            <div class="morph-controls" role="group" aria-label="Shape Morph Modes">
+              <button class="morph-btn active" data-shape="shield">🛡️ Shield Defense</button>
+              <button class="morph-btn" data-shape="wave">〰️ Neural Voice</button>
+              <button class="morph-btn" data-shape="vault">🔒 Cryptographic Vault</button>
+            </div>
+          </div>
+
+          <div class="stage-canvas-container">
+            <!-- SVG with line drawing, morph path, and motion path -->
+            <svg id="heroSvgCore" viewBox="0 0 500 300" class="hero-svg-canvas">
+              <defs>
+                <radialGradient id="stageBackglow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#27e8ff" stop-opacity="0.18" />
+                  <stop offset="60%" stop-color="#7a5cff" stop-opacity="0.08" />
+                  <stop offset="100%" stop-color="#060b1a" stop-opacity="0" />
+                </radialGradient>
+                <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.9" />
+                  <stop offset="45%" stop-color="#4d88ff" stop-opacity="0.75" />
+                  <stop offset="100%" stop-color="#ff4071" stop-opacity="0.85" />
+                </linearGradient>
+                <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#00f0ff" />
+                  <stop offset="50%" stop-color="#8a5cff" />
+                  <stop offset="100%" stop-color="#3dffa8" />
+                </linearGradient>
+                <filter id="glowFilter" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="6" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
+              <!-- Ambient Central Glow -->
+              <ellipse cx="250" cy="150" rx="200" ry="120" fill="url(#stageBackglow)" />
+
+              <!-- Line Drawing: Animated Cyber Circuit Grids -->
+              <g class="circuit-lines" stroke="url(#lineGrad)" stroke-width="2.2" stroke-linecap="round" fill="none">
+                <path class="line-draw-path" d="M 20,40 L 120,40 L 160,80 L 340,80 L 380,40 L 480,40" />
+                <path class="line-draw-path" d="M 30,260 L 140,260 L 180,220 L 320,220 L 360,260 L 470,260" />
+                <path class="line-draw-path" d="M 50,150 L 140,150 L 170,150" />
+                <path class="line-draw-path" d="M 330,150 L 360,150 L 450,150" />
+              </g>
+
+              <!-- Motion Path: Curved Spline where Cyber Data Packets Travel -->
+              <path id="signalMotionPath" d="M 30,150 C 130,40 200,260 250,150 C 300,40 370,260 470,150" fill="none" stroke="rgba(39,232,255,0.32)" stroke-width="2" stroke-dasharray="5 7" />
+
+              <!-- Shape Morphing Central Path (Shield -> Wave -> Lock) -->
+              <g transform="translate(150, 50)" filter="url(#glowFilter)">
+                <path id="heroMorphShape" class="morphing-core-path" d="M 100,20 C 145,20 180,45 180,95 C 180,145 140,175 100,190 C 60,175 20,145 20,95 C 20,45 55,20 100,20 Z" fill="url(#shieldGrad)" stroke="#27e8ff" stroke-width="2.8" />
+              </g>
+
+              <!-- Motion Path Moving Packets -->
+              <g class="motion-packets">
+                <circle id="signalPacket1" r="6.5" fill="#27e8ff" filter="url(#glowFilter)" />
+                <circle id="signalPacket2" r="5.5" fill="#3dffa8" filter="url(#glowFilter)" />
+                <circle id="signalPacket3" r="4.5" fill="#ff5c7a" filter="url(#glowFilter)" />
+              </g>
+            </svg>
+
+            <!-- Interactive Live Draggable Threat Level & Spring Physics Controller -->
+            <div class="interactive-threat-controller">
+              <div class="threat-controller-top">
+                <span class="threat-label">🛡️ Threat &amp; Noise Sensitivity Simulator (Draggable Handle)</span>
+                <span id="threatLevelBadge" class="threat-badge safe">NORMAL (24%)</span>
+              </div>
+              <div class="draggable-track" id="threatTrack">
+                <div class="draggable-fill" id="threatFill" style="width: 24%"></div>
+                <div class="draggable-handle" id="threatHandle" role="slider" aria-valuenow="24" aria-valuemin="0" aria-valuemax="100" tabindex="0">
+                  <span class="handle-pip"></span>
+                </div>
+              </div>
+              <div class="threat-feedback-meta">
+                <span id="threatStatusText">Passive Screening: Legitimate calls pass in &lt;180ms</span>
+                <span id="threatSpringStatus" class="threat-spring-indicator">Spring Physics: 80k/10d</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Standard Property Animations: Live Metric Counter Cards with Enhanced 3D Transforms -->
+        <div class="hero-metrics-grid">
+          <div class="metric-card glass tilt scroll-reveal" data-metric="scam">
+            <div class="metric-icon">🛡️</div>
+            <div class="metric-val-wrap">
+              <span class="metric-number" id="metricScam" data-target="99.8">0</span><span class="metric-unit">%</span>
+            </div>
+            <div class="metric-label">Scam &amp; Spam Filter Accuracy</div>
+            <div class="metric-sub muted">Multi-turn intent screening</div>
+          </div>
+
+          <div class="metric-card glass tilt scroll-reveal" data-metric="latency">
+            <div class="metric-icon">⚡</div>
+            <div class="metric-val-wrap">
+              <span class="metric-prefix">&lt;</span><span class="metric-number" id="metricLatency" data-target="240">0</span><span class="metric-unit">ms</span>
+            </div>
+            <div class="metric-label">Neural TTS Latency</div>
+            <div class="metric-sub muted">NVIDIA NIM Cloud synthesis</div>
+          </div>
+
+          <div class="metric-card glass tilt scroll-reveal" data-metric="rag">
+            <div class="metric-icon">✦</div>
+            <div class="metric-val-wrap">
+              <span class="metric-number" id="metricRAG" data-target="100">0</span><span class="metric-unit">%</span>
+            </div>
+            <div class="metric-label">Private Knowledge Vault RAG</div>
+            <div class="metric-sub muted">Zero caller hallucinations</div>
+          </div>
+
+          <div class="metric-card glass tilt scroll-reveal" data-metric="uptime">
+            <div class="metric-icon">🌐</div>
+            <div class="metric-val-wrap">
+              <span class="metric-number" id="metricUptime" data-target="24">0</span><span class="metric-unit">/7</span>
+            </div>
+            <div class="metric-label">Zero-Touch Autonomous Sentry</div>
+            <div class="metric-sub muted">Always-on call protection</div>
+          </div>
+        </div>
+
+        <!-- Architecture Pipeline with Advanced Staggering & Scroll Observer -->
+        <div class="hero-pipeline-showcase glass scroll-reveal">
+          <div class="pipeline-header">
+            <h3>✦ Real-Time Neural Intelligence Pipeline</h3>
+            <p class="muted">Observed on Scroll • Advanced Staggered Animations • Zero Latency Bottlenecks</p>
+          </div>
+          <div class="pipeline-steps-grid">
+            <div class="pipeline-step-card glass-inner stagger-step">
+              <div class="step-num">01</div>
+              <div class="step-icon">🎙️</div>
+              <h4>Voice &amp; Audio Ingestion</h4>
+              <p>Simulated VoIP stream or real browser Web Speech microphone input transcribed in real-time.</p>
+            </div>
+            <div class="pipeline-step-card glass-inner stagger-step">
+              <div class="step-num">02</div>
+              <div class="step-icon">🧠</div>
+              <h4>Knowledge Vault &amp; CRM</h4>
+              <p>Direct SQLite vector/rule matching retrieves caller history, delivery instructions, and custom policies.</p>
+            </div>
+            <div class="pipeline-step-card glass-inner stagger-step">
+              <div class="step-num">03</div>
+              <div class="step-icon">🛡️</div>
+              <h4>Gemini 2.5 Multi-Turn Brain</h4>
+              <p>Detects spoofing, verifies caller identity, extracts appointment specifics, and enforces safety bounds.</p>
+            </div>
+            <div class="pipeline-step-card glass-inner stagger-step">
+              <div class="step-num">04</div>
+              <div class="step-icon">🔊</div>
+              <h4>NVIDIA NIM Magpie TTS</h4>
+              <p>Synthesizes human-like, empathic speech responses in sub-250ms with custom timbre and pacing.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
     <!-- OVERVIEW -->
-    <section id="overview" class="view on">
+    <section id="overview" class="view">
       <div class="hero">
         <div class="orb-wrap">
           <div id="orb" aria-label="AI orb"><div class="css-orb"></div></div>
@@ -75,11 +282,15 @@
     <button class="btn" type="button" data-chip="This is urgent, please help me.">Urgent request</button>
   </div>
   <div id="chatComposer" class="composer" role="group" aria-label="Send caller message">
-    <input id="chatInput" type="text" maxlength="200" autocomplete="off" placeholder="Type what the caller says…" aria-label="Caller message">
+    <button class="btn btn-mic" id="micBtn" type="button" title="Speak as caller (Microphone Speech-to-Text)">
+      <span class="mic-icon">🎙️</span>
+      <span class="mic-wave" aria-hidden="true"><span></span><span></span><span></span></span>
+    </button>
+    <input id="chatInput" type="text" maxlength="200" autocomplete="off" placeholder="Type or click 🎙️ to speak as caller…" aria-label="Caller message">
     <button class="btn pri" id="chatSend" type="button">Send</button>
     <button class="btn danger" id="chatEnd" type="button">End call</button>
   </div>
-  <p class="muted">Simulated call. Assistant replies are provided by the CallGuardianAI backend.</p>
+  <p class="muted">Simulated call. Assistant replies are powered by Gemini & NVIDIA Voice.</p>
 </div>
             </div>
           </div>
@@ -92,6 +303,19 @@
                 <div><span class="muted">Urgency</span><b id="dUrg"></b></div>
                 <div><span class="muted">Risk</span><b id="dRisk"></b></div>
                 <div><span class="muted">Action</span><b id="dAct"></b></div>
+              </div>
+              <div class="sentiment-stress-row" style="margin-top:12px;padding:10px 12px;background:rgba(255,255,255,0.04);border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="muted" style="font-size:0.8rem">Sentiment:</span>
+                  <span class="tag-sentiment" id="dSentiment">Neutral</span>
+                </div>
+                <div class="stress-cell" style="display:flex;align-items:center;gap:8px;flex:1;max-width:200px">
+                  <span class="muted" style="font-size:0.8rem">Stress:</span>
+                  <div class="stress-meter-track" title="Caller vocal stress level" style="flex:1;height:8px;background:rgba(255,255,255,0.1);border-radius:99px;overflow:hidden">
+                    <div class="stress-meter-bar" id="dStressBar" style="width:20%;height:100%;background:linear-gradient(90deg,var(--gn),var(--rd));transition:width 0.4s ease"></div>
+                  </div>
+                  <span id="dStressVal" class="stress-val" style="font-size:0.78rem;font-weight:700">20%</span>
+                </div>
               </div>
               <p id="dWhy" class="why"></p>
             </div>
@@ -109,8 +333,39 @@
     <!-- CALLS -->
     <section id="calls" class="view">
       <div class="two">
-        <div class="glass pad"><h2>Recent calls</h2><div id="callList" class="list"></div></div>
-        <div class="glass pad"><h2>Transcript</h2><div id="transcript" class="transcript"></div></div>
+        <div class="glass pad">
+          <div class="row-between" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Recent calls</h2>
+            <span id="callCountBadge" class="tag">0 calls</span>
+          </div>
+          <div id="callList" class="list"></div>
+        </div>
+        <div class="glass pad transcript-panel">
+          <div class="transcript-header" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:12px">
+            <div>
+              <h2 id="trTitle" style="margin:0 0 4px">Transcript</h2>
+              <p id="trMeta" class="muted">Select a call from the list to review synchronized turns.</p>
+            </div>
+            <!-- Synchronized Audio Player Bar -->
+            <div id="audioPlayerBar" class="audio-player-bar" hidden style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.05);padding:8px 14px;border-radius:12px;border:1px solid var(--line)">
+              <button class="btn btn-play" id="audioPlayBtn" type="button" style="padding:6px 12px;font-size:0.85rem">▶ Play Call</button>
+              <div class="scrub-container" style="display:flex;align-items:center;gap:8px;flex:1">
+                <input type="range" id="audioScrubber" min="0" max="100" value="0" step="1" style="flex:1;cursor:pointer">
+                <div class="time-label" style="font-size:0.75rem;font-variant-numeric:tabular-nums;color:var(--mut)"><span id="audioCurTime">00:00</span> / <span id="audioTotalTime">00:00</span></div>
+              </div>
+              <span id="audioVoiceBadge" class="tag" style="font-size:0.72rem">AI Audio Sync</span>
+            </div>
+          </div>
+          <!-- Sentiment & Stress Trajectory Meter -->
+          <div id="callSentimentTrajectory" class="sentiment-trajectory-box" hidden style="margin-bottom:14px;padding:10px 14px;background:rgba(39,232,255,0.05);border:1px solid rgba(39,232,255,0.15);border-radius:12px">
+            <div class="trajectory-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span class="muted" style="font-size:0.78rem;font-weight:600">Emotional & Stress Trajectory:</span>
+              <span id="trajSummary" class="traj-summary" style="font-size:0.78rem;color:var(--cy)"></span>
+            </div>
+            <div id="trajTimeline" class="traj-timeline" style="display:flex;align-items:center;gap:6px;overflow-x:auto;padding-bottom:4px"></div>
+          </div>
+          <div id="transcript" class="transcript"></div>
+        </div>
       </div>
     </section>
 
@@ -168,13 +423,102 @@
       </div>
     </section>
 
+    <!-- KNOWLEDGE VAULT & CALLER CRM -->
+    <section id="vault" class="view">
+      <div class="two">
+        <div class="glass pad">
+          <h2>✦ Personal Knowledge Vault (RAG / Policies)</h2>
+          <p class="muted">Add custom preferences, delivery notes, and consulting rates that the AI agent strictly references during calls.</p>
+          <form id="vaultForm" style="margin-top:14px;">
+            <div class="grid2">
+              <label>Category
+                <select id="vCategory">
+                  <option value="preference">Preference (e.g. Reject sales)</option>
+                  <option value="instruction">Instruction (e.g. Delivery gate)</option>
+                  <option value="faq">FAQ / Rates (e.g. $100/hr)</option>
+                  <option value="schedule">Schedule Policy</option>
+                </select>
+              </label>
+              <label>Policy / Rule text
+                <input id="vText" placeholder="e.g., My delivery drop-off is behind the blue gate" required maxlength="300">
+              </label>
+            </div>
+            <div class="actions" style="margin-top:10px;">
+              <button class="btn pri" type="submit">+ Add to Vault</button>
+            </div>
+          </form>
+          <div id="vaultList" class="list" style="margin-top:18px;"></div>
+        </div>
+
+        <div class="glass pad">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <h2 style="margin:0">Caller Memory & Personal CRM</h2>
+            <span class="tag">Auto-Sync</span>
+          </div>
+          <p class="muted">The AI remembers past conversations and relationship notes for recurring callers.</p>
+          <div id="crmList" class="list" style="margin-top:14px;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="settings" class="view">
+      <div class="two">
+        <div class="glass pad">
+          <h2>✦ NVIDIA AI Voice & Audio Engine</h2>
+          <p class="muted">Configure NVIDIA NIM models for high-fidelity speech synthesis.</p>
+          <div style="margin-top:16px;display:flex;flex-direction:column;gap:14px">
+            <div style="padding:12px;background:rgba(255,255,255,0.04);border-radius:12px;border:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <b>NVIDIA NIM Audio Engine</b>
+                <p class="muted" id="nvStatusText" style="font-size:0.8rem;margin-top:2px">Checking status…</p>
+              </div>
+              <span class="tag" id="nvStatusTag">Checking</span>
+            </div>
+            <label>NVIDIA Voice Persona
+              <select id="sVoice">
+                <option value="alloy">NVIDIA Magpie-TTS — Neutral Assistant</option>
+                <option value="echo">NVIDIA Magpie-TTS — Calm Executive</option>
+                <option value="fable">NVIDIA Magpie-TTS — Warm & Friendly</option>
+                <option value="onyx">NVIDIA Magpie-TTS — Firm Gatekeeper</option>
+                <option value="nova">NVIDIA Magpie-TTS — High-Energy Clarity</option>
+              </select>
+            </label>
+            <div class="actions">
+              <button class="btn pri" id="testVoiceBtn" type="button">▶ Test Voice Synthesis</button>
+            </div>
+          </div>
+        </div>
+        <div class="glass pad">
+          <h2>Application Preferences</h2>
+          <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px;">
+            <label class="row">
+              <span>Automatic Microphone Send (send after speech)</span>
+              <input type="checkbox" id="autoMicSend" checked>
+            </label>
+            <label class="row">
+              <span>Voice Playback on Assistant Replies</span>
+              <input type="checkbox" id="voicePlayback" checked>
+            </label>
+            <label class="row">
+              <span>Reduced Motion Effects</span>
+              <input type="checkbox" id="reduceMotionToggle">
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
 <div id="toasts" aria-live="polite" aria-atomic="false"></div>
 <!-- Do not start the dashboard until the backend validates the session. -->
 <script src="chat-workflow.js?v=chat-retry-1"></script>
 <script>
 window.CGAI_AUTH_READY = (async () => {
   try {
-    const api = window.CGAI_API_BASE || 'http://127.0.0.1:8001';
+    const defaultApiHost = window.location.hostname || '127.0.0.1';
+    const api = window.CGAI_API_BASE || `http://${defaultApiHost}:8001`;
     const r = await fetch(`${api}/auth/me`, { credentials: 'include' });
     if (r.status === 401) {
       window.location.replace('login.html');
@@ -196,13 +540,19 @@ window.CGAI_AUTH_READY.then(authorized => {
   if (!authorized) return;
   const loadApp = () => {
     const app = document.createElement('script');
-    app.src = 'app.js?v=chat-retry-1';
+    app.src = 'app.js?v=chat-retry-2';
     document.body.appendChild(app);
   };
+  // Load app.js immediately
+  loadApp();
+  // Load three.js progressively for enhanced 3D orb
   const three = document.createElement('script');
   three.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-  three.onload = loadApp;
-  three.onerror = loadApp;
+  three.onload = () => {
+    if (typeof window.start3DOrb === 'function') {
+      window.start3DOrb();
+    }
+  };
   document.body.appendChild(three);
 });
 </script>

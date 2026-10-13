@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple CAPTCHA Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .captcha-question { 
+            padding: 10px; 
+            border: 2px solid #ccc; 
+            border-radius: 5px; 
+            background: #f9f9f9; 
+            font-size: 1.2em;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .loading { color: #666; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>CAPTCHA Test</h1>
+    <div id="status">Initializing...</div>
+    <div class="captcha-question" id="captchaQuestion">Not loaded</div>
+    <button id="refreshBtn">Refresh CAPTCHA</button>
+    <input type="number" id="answer" placeholder="Your answer">
+    
+    <h2>Debug Log:</h2>
+    <pre id="log"></pre>
+
+    <script>
+        const API = 'http://127.0.0.1:8001';
+        let captchaId = '';
+        
+        function log(message) {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toISOString();
+            logEl.textContent += `[${timestamp}] ${message}\n`;
+            console.log(message);
+        }
+        
+        function setStatus(message, className = '') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = className;
+        }
+        
+        async function loadCaptcha() {
+            log('=== CAPTCHA Load Started ===');
+            setStatus('Loading CAPTCHA...', 'loading');
+            
+            const questionEl = document.getElementById('captchaQuestion');
+            questionEl.textContent = 'Loading...';
+            questionEl.className = 'captcha-question loading';
+            
+            try {
+                const url = `${API}/captcha`;
+                log(`Fetching: ${url}`);
+                
+                const response = await fetch(url);
+                log(`Response status: ${response.status} ${response.statusText}`);
+                
+                // Log response headers
+                const headers = {};
+                for (let [key, value] of response.headers.entries()) {
+                    headers[key] = value;
+                }
+                log(`Response headers: ${JSON.stringify(headers, null, 2)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                log(`Response data: ${JSON.stringify(data, null, 2)}`);
+                
+                // Validate response
+                if (!data) {
+                    throw new Error('Empty response data');
+                }
+                if (typeof data.id !== 'string') {
+                    throw new Error(`Invalid id type: ${typeof data.id}, value: ${data.id}`);
+                }
+                if (typeof data.question !== 'string') {
+                    throw new Error(`Invalid question type: ${typeof data.question}, value: ${data.question}`);
+                }
+                
+                // Success!
+                captchaId = data.id;
+                questionEl.textContent = data.question;
+                questionEl.className = 'captcha-question success';
+                
+                setStatus(`CAPTCHA loaded: ${data.question}`, 'success');
+                log(`SUCCESS: CAPTCHA ID = ${data.id}`);
+                log(`SUCCESS: Question = "${data.question}"`);
+                
+            } catch (error) {
+                log(`ERROR: ${error.message}`);
+                log(`ERROR Stack: ${error.stack}`);
+                
+                questionEl.textContent = 'Failed to load CAPTCHA';
+                questionEl.className = 'captcha-question error';
+                setStatus(`Error: ${error.message}`, 'error');
+            }
+            
+            log('=== CAPTCHA Load Finished ===');
+        }
+        
+        // Bind refresh button
+        document.getElementById('refreshBtn').addEventListener('click', loadCaptcha);
+        
+        // Test CORS first
+        async function testCORS() {
+            log('=== Testing CORS ===');
+            try {
+                const response = await fetch(`${API}/captcha`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': window.location.origin,
+                        'Access-Control-Request-Method': 'GET'
+                    }
+                });
+                log(`CORS preflight response: ${response.status}`);
+            } catch (error) {
+                log(`CORS test error: ${error.message}`);
+            }
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('DOM loaded');
+            setStatus('Testing CORS...', 'loading');
+            testCORS().then(() => loadCaptcha());
+        });
+        
+        log('Script loaded');
+    </script>
+</body>
+</html>

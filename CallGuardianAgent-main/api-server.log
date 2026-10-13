@@ -1,0 +1,22 @@
+INFO:     127.0.0.1:57737 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61238 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51643 - "GET /captcha HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61238 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62785 - "GET /analytics/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61238 - "GET /calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52756 - "POST /chat HTTP/1.1" 502 Bad Gateway
+INFO:     127.0.0.1:54433 - "POST /chat HTTP/1.1" 502 Bad Gateway
+INFO:     127.0.0.1:54423 - "POST /chat HTTP/1.1" 502 Bad Gateway
+INFO:     127.0.0.1:54423 - "POST /chat HTTP/1.1" 502 Bad Gateway
+INFO:     127.0.0.1:52421 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63925 - "OPTIONS /calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49670 - "OPTIONS /analytics/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52421 - "GET /calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49316 - "GET /analytics/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61411 - "OPTIONS /chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50215 - "POST /chat HTTP/1.1" 502 Bad Gateway
+INFO:     127.0.0.1:64878 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57828 - "GET /analytics/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64878 - "GET /calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52620 - "POST /chat HTTP/1.1" 502 Bad Gateway
+INFO:     127.0.0.1:57993 - "GET /health HTTP/1.1" 200 OK

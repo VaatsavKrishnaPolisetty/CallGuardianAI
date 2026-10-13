@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAPTCHA Test</title>
+</head>
+<body>
+  <h1>CAPTCHA Frontend Test</h1>
+  
+  <div>
+    <p>CAPTCHA Question: <span id="captchaQuestion">Loading...</span></p>
+    <button id="refreshBtn">Refresh CAPTCHA</button>
+    <input type="number" id="captchaAns" placeholder="Answer">
+  </div>
+  
+  <div id="logs" style="margin-top: 20px; font-family: monospace; white-space: pre-wrap;"></div>
+
+  <script>
+    const API = 'http://127.0.0.1:8001';
+    let captchaId = '';
+    
+    function log(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      document.getElementById('logs').textContent += `[${timestamp}] ${message}\n`;
+      console.log(message);
+    }
+    
+    async function loadCaptcha() {
+      log('Starting CAPTCHA load...');
+      captchaId = '';
+      document.getElementById('captchaQuestion').textContent = 'Loading...';
+      
+      try {
+        log(`Fetching: ${API}/captcha`);
+        const res = await fetch(`${API}/captcha`);
+        
+        log(`Response status: ${res.status} ${res.statusText}`);
+        log(`Response headers: ${JSON.stringify(Object.fromEntries(res.headers))}`);
+        
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        
+        const data = await res.json();
+        log(`Response data: ${JSON.stringify(data)}`);
+        
+        if (!data || typeof data.id !== 'string' || typeof data.question !== 'string') {
+          throw new Error('Invalid CAPTCHA response format');
+        }
+        
+        captchaId = data.id;
+        document.getElementById('captchaQuestion').textContent = data.question;
+        log(`CAPTCHA loaded successfully: ${data.question} (ID: ${data.id.slice(0, 8)}...)`);
+        
+      } catch (err) {
+        log(`CAPTCHA loading failed: ${err.message}`);
+        document.getElementById('captchaQuestion').textContent = 'Error loading CAPTCHA';
+      }
+    }
+    
+    // Test CORS preflight
+    async function testCors() {
+      log('Testing CORS with OPTIONS request...');
+      try {
+        const res = await fetch(`${API}/captcha`, {
+          method: 'OPTIONS',
+          headers: {
+            'Origin': 'http://127.0.0.1:5500',
+            'Access-Control-Request-Method': 'GET'
+          }
+        });
+        log(`CORS preflight status: ${res.status}`);
+      } catch (err) {
+        log(`CORS test failed: ${err.message}`);
+      }
+    }
+    
+    document.getElementById('refreshBtn').addEventListener('click', loadCaptcha);
+    
+    // Run tests
+    log('Starting CAPTCHA frontend tests...');
+    testCors();
+    loadCaptcha();
+  </script>
+</body>
+</html>

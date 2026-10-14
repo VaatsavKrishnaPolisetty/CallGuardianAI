@@ -1815,6 +1815,18 @@ function initScrollObserver() {
             });
           }
         }
+        if (entry.target.classList.contains('hero-comparison-showcase')) {
+          if (typeof window.anime !== 'undefined') {
+            anime({
+              targets: '.comparison-card',
+              opacity: [0, 1],
+              translateY: [28, 0],
+              delay: anime.stagger(140, { start: 100, from: 'first' }),
+              duration: 750,
+              easing: 'easeOutCubic'
+            });
+          }
+        }
         observer.unobserve(entry.target);
       }
     });
@@ -1824,6 +1836,8 @@ function initScrollObserver() {
   if (metricsGrid) observer.observe(metricsGrid);
   const pipelineShowcase = $('.hero-pipeline-showcase');
   if (pipelineShowcase) observer.observe(pipelineShowcase);
+  const comparisonShowcase = $('.hero-comparison-showcase');
+  if (comparisonShowcase) observer.observe(comparisonShowcase);
 }
 
 function initInteractiveCardsMotion() {
@@ -1831,14 +1845,13 @@ function initInteractiveCardsMotion() {
 
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
   if (!isMobile) {
-    $$('.metric-card, .pipeline-step-card').forEach(card => {
+    $$('.metric-card, .pipeline-step-card, .comparison-card').forEach(card => {
       card.addEventListener('mouseenter', () => {
         anime({
           targets: card,
-          translateY: -6,
-          rotateX: 4,
-          scale: 1.025,
-          duration: 400,
+          translateY: -5,
+          scale: 1.015,
+          duration: 350,
           easing: 'spring(1, 80, 12, 0)'
         });
       });
@@ -1846,9 +1859,8 @@ function initInteractiveCardsMotion() {
         anime({
           targets: card,
           translateY: 0,
-          rotateX: 0,
           scale: 1,
-          duration: 500,
+          duration: 450,
           easing: 'spring(1, 90, 10, 0)'
         });
       });
@@ -1919,6 +1931,9 @@ function initAnimeHero() {
         mic.click();
       }
     }, 300);
+  });
+  $('#compLaunchSimBtn')?.addEventListener('click', () => {
+    go('overview');
   });
 
   // 2. LINE DRAWING: SVG Circuit paths

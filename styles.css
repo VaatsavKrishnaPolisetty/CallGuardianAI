@@ -790,6 +790,155 @@ html.lenis, html.lenis body {
   color: var(--mut);
 }
 
+/* ── Before vs After Comparison Section ── */
+.hero-comparison-showcase {
+  padding: 32px 28px;
+  border-radius: 20px;
+  border-color: rgba(140, 170, 255, 0.22);
+  margin-top: 6px;
+}
+
+.comparison-header {
+  margin-bottom: 24px;
+}
+
+.comparison-header h3 {
+  font-family: Sora, system-ui, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.comparison-card {
+  padding: 24px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+}
+
+.comparison-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(30, 60, 140, 0.12);
+}
+
+.comparison-card.before {
+  border-left: 4px solid var(--rd);
+}
+
+.comparison-card.after {
+  border-left: 4px solid var(--cy);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 248, 255, 0.95) 100%);
+  box-shadow: 0 4px 20px rgba(10, 143, 176, 0.08);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.comp-badge {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 4px 12px;
+  border-radius: 99px;
+  text-transform: uppercase;
+}
+
+.comp-badge.bad {
+  background: rgba(255, 92, 122, 0.12);
+  color: #d8294d;
+  border: 1px solid rgba(216, 41, 77, 0.3);
+}
+
+.comp-badge.good {
+  background: rgba(10, 143, 176, 0.12);
+  color: #0a8fb0;
+  border: 1px solid rgba(10, 143, 176, 0.3);
+}
+
+.comp-metric {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--mut);
+}
+
+.comp-title {
+  font-family: Sora, system-ui, sans-serif;
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin-bottom: 18px;
+  color: var(--ink);
+}
+
+.comp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.comp-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.comp-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.comp-item strong {
+  display: block;
+  font-size: 0.92rem;
+  margin-bottom: 2px;
+}
+
+.comp-item p {
+  color: var(--mut);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.comp-cta-strip {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: rgba(10, 143, 176, 0.08);
+  border: 1px solid rgba(10, 143, 176, 0.22);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.comp-cta-text {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
 /* ── Responsive Scoping ── */
 @media (max-width: 960px) {
   .hero-metrics-grid {
@@ -797,6 +946,9 @@ html.lenis, html.lenis body {
   }
   .pipeline-steps-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .comparison-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -816,5 +968,9 @@ html.lenis, html.lenis body {
   }
   .hero-svg-canvas {
     max-width: 100%;
+  }
+  .comp-cta-strip {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

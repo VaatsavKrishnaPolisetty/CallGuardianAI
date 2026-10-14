@@ -113,7 +113,7 @@ client = (
     genai.Client(api_key=api_key, http_options=genai.types.HttpOptions(timeout=30_000))
     if api_key else None
 )
-MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
+MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite").strip() or "gemini-2.5-flash-lite"
 
 
 
@@ -654,7 +654,8 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
             "person or the user should take over. These are recommendations "
             "only: never claim a real cellular call was answered, declined, "
             "or transferred. For sensitive-information requests, warn never "
-            "to disclose OTPs, passwords, banking PINs, or verification codes."
+            "to disclose OTPs, passwords, banking PINs, or verification codes. "
+            "CRITICAL: Keep the 'reply' field natural, professional, and strictly concise (under 25 words / 1-2 brief sentences max) so that speech synthesis generates instantly without delay."
         ),
     }
 
@@ -673,10 +674,10 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
             except Exception as err:
                 last_error = err
                 code = getattr(err, "code", None) or getattr(err, "status", None)
-                if code == 429:
-                    logger.warning("Gemini model %s reached quota/rate-limit (429), failing over to next model...", attempt_model)
-                    continue
-                raise
+                if code == 401:
+                    raise
+                logger.warning("Gemini model %s failed (%s), failing over to next model...", attempt_model, err)
+                continue
 
         if not response or not response.text:
             if last_error:
@@ -932,6 +933,19 @@ def tts_status(current_user: CurrentUser):
     }
 
 
+_tts_client = None
+
+def _get_tts_client():
+    global _tts_client
+    if _tts_client is None or getattr(_tts_client, "is_closed", False):
+        import httpx
+        _tts_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=3.0),
+            limits=httpx.Limits(max_keepalive_connections=8, max_connections=16, keepalive_expiry=60.0),
+        )
+    return _tts_client
+
+
 @app.post("/tts")
 async def text_to_speech(body: TTSRequest, current_user: CurrentUser, http_request: Request):
     _check_same_origin(http_request)
@@ -942,7 +956,6 @@ async def text_to_speech(body: TTSRequest, current_user: CurrentUser, http_reque
             content={"supported": False, "reason": "NVIDIA_API_KEY is not configured", "fallback_to_browser": True}
         )
     try:
-        import httpx
         url = os.getenv(
             "NVIDIA_TTS_URL",
             "https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com/v1/audio/synthesize"
@@ -965,19 +978,29 @@ async def text_to_speech(body: TTSRequest, current_user: CurrentUser, http_reque
             "encoding": "LINEAR_PCM",
             "sample_rate_hz": "44100",
         }
-        async with httpx.AsyncClient(timeout=15.0) as client_http:
-            res = await client_http.post(url, data=data, headers=headers)
-            if res.status_code == 200 and len(res.content) > 100:
-                return PlainResponse(content=res.content, media_type="audio/wav")
-            logger.warning("NVIDIA TTS returned %d: %s", res.status_code, res.text[:200])
-            return JSONResponse(
-                status_code=200,
-                content={"supported": False, "reason": f"NVIDIA error (HTTP {res.status_code})", "fallback_to_browser": True}
-            )
+        client_http = _get_tts_client()
+        res = await client_http.post(url, data=data, headers=headers)
+        if res.status_code == 200 and len(res.content) > 100:
+            return PlainResponse(content=res.content, media_type="audio/wav")
+        logger.warning("NVIDIA TTS returned %d: %s", res.status_code, res.text[:200])
+        return JSONResponse(
+            status_code=200,
+            content={"supported": False, "reason": f"NVIDIA error (HTTP {res.status_code})", "fallback_to_browser": True}
+        )
     except Exception as exc:
         logger.warning("NVIDIA TTS request exception: %s", exc)
         return JSONResponse(
             status_code=200,
             content={"supported": False, "reason": str(exc), "fallback_to_browser": True}
         )
+
+
+@app.on_event("shutdown")
+async def _shutdown_tts_client():
+    global _tts_client
+    if _tts_client and not getattr(_tts_client, "is_closed", False):
+        try:
+            await _tts_client.aclose()
+        except Exception:
+            pass
 

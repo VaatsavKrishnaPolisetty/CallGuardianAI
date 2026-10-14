@@ -217,6 +217,43 @@ const TTS = {
   },
   setSpeaking(on) { this.speaking = on; if (this.ui.stop) this.ui.stop.disabled = !on; },
   audioCache: new Map(),
+  unlocked: false,
+  unlockAudio() {
+    if (this.unlocked) return;
+    this.unlocked = true;
+    try {
+      const silent = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+      silent.play().catch(() => {});
+    } catch (_) {}
+  },
+  precacheGreetings() {
+    const greetings = [
+      "Hello, you have reached the user's assistant. How can I help?",
+      "Hello, how can I help you?",
+      "Who is calling, and why?",
+      "May I have the tracking reference?",
+      "Can you tell me who is involved?",
+      "Hello, what is this regarding?"
+    ];
+    greetings.forEach(text => {
+      const voice = state.nvidiaVoice || 'alloy';
+      const cacheKey = `${voice}:${text}`;
+      if (!this.audioCache.has(cacheKey)) {
+        Auth.fetch(`${API}/tts`, {
+          method: 'POST',
+          body: JSON.stringify({ text, voice })
+        }).then(res => {
+          if (res.ok && res.headers.get('content-type')?.includes('audio/')) {
+            return res.blob().then(blob => {
+              if (blob && blob.size > 64) {
+                this.audioCache.set(cacheKey, URL.createObjectURL(blob));
+              }
+            });
+          }
+        }).catch(() => {});
+      }
+    });
+  },
   playAudioUrl(audioUrl) {
     return new Promise((resolve, reject) => {
       if (this.audioEl) {
@@ -236,7 +273,14 @@ const TTS = {
         this.setSpeaking(false);
         reject(err);
       };
-      audio.play().catch(reject);
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          this.audioEl = null;
+          this.setSpeaking(false);
+          reject(err);
+        });
+      }
     });
   },
   async speakNvidia(text, voiceOverride = null) {
@@ -246,26 +290,36 @@ const TTS = {
       return this.playAudioUrl(this.audioCache.get(cacheKey));
     }
 
-    const res = await Auth.fetch(`${API}/tts`, {
-      method: 'POST',
-      body: JSON.stringify({
-        text,
-        voice: voice
-      })
-    });
-    if (!res.ok) throw new Error('NVIDIA TTS returned ' + res.status);
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
-      if (!data.supported || data.fallback_to_browser) {
-        throw new Error(data.reason || 'NVIDIA TTS not available');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    try {
+      const res = await Auth.fetch(`${API}/tts`, {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({
+          text,
+          voice: voice
+        })
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) throw new Error('NVIDIA TTS returned ' + res.status);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (!data.supported || data.fallback_to_browser) {
+          throw new Error(data.reason || 'NVIDIA TTS not available');
+        }
       }
+      const blob = await res.blob();
+      if (!blob || blob.size < 64) throw new Error('Empty audio');
+      const audioUrl = URL.createObjectURL(blob);
+      this.audioCache.set(cacheKey, audioUrl);
+      return await this.playAudioUrl(audioUrl);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
     }
-    const blob = await res.blob();
-    if (!blob || blob.size < 64) throw new Error('Empty audio');
-    const audioUrl = URL.createObjectURL(blob);
-    this.audioCache.set(cacheKey, audioUrl);
-    return this.playAudioUrl(audioUrl);
   },
   async speak(text, manual, voiceOverride = null) {
     if (!text || !text.trim()) return Promise.resolve();
@@ -274,32 +328,15 @@ const TTS = {
 
     this.stop();
 
-    // 1. Always use NVIDIA AI Voice first
-    let lastErr = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        await this.speakNvidia(text, voiceOverride);
-        return;
-      } catch (e) {
-        lastErr = e;
-        const errStr = String(e);
-        if (errStr.includes('429')) {
-          // Rate-limited: wait 800ms and try once more before failing
-          await new Promise(r => setTimeout(r, 800));
-        } else {
-          break;
-        }
-      }
+    // 1. Always attempt NVIDIA AI Voice first (with 3.5s timeout for fast response)
+    try {
+      await this.speakNvidia(text, voiceOverride);
+      return;
+    } catch (e) {
+      console.warn('NVIDIA TTS unavailable or timed out; using instant speech fallback:', e.message);
     }
 
-    // If NVIDIA is configured or status is online, DO NOT play the old browser robot voice!
-    if (window.CGAI_NVIDIA_ONLINE || state.nvidiaVoice) {
-      console.warn('NVIDIA TTS was unable to synthesize this line:', lastErr);
-      if (manual) toast('NVIDIA Voice engine is busy; please try again in a moment.', true);
-      return Promise.resolve();
-    }
-
-    // 2. Web Speech API fallback (only if NVIDIA is completely unconfigured)
+    // 2. Instant Browser Web Speech API fallback (ensures zero delay)
     if (!('speechSynthesis' in window)) {
       if (manual) toast('Speech synthesis not supported in this browser.', true);
       return Promise.resolve();
@@ -347,6 +384,7 @@ const TTS = {
       speechSynthesis.addEventListener('voiceschanged', () => this.pick());
     }
     this.pick();
+    this.precacheGreetings();
   }
 };
 
@@ -624,6 +662,7 @@ const ACTION_LABEL = { ai: 'Handle with AI', transfer: 'Transfer to you', declin
 const RECOMMENDATION_LABEL = { accept: 'Accept (simulated)', decline: 'Decline (simulated)', transfer: 'Transfer (simulated)' };
  
 function simulate() {
+  TTS.unlockAudio();
   if (active) return toast('A simulated call is already in progress.', true);
   const base = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
   const c = findContact(base.number);
@@ -634,8 +673,9 @@ function simulate() {
   toast('Simulated incoming call');
 }
 function act(kind, event) {
+  TTS.unlockAudio();
   if (!active) return toast('No active call. Simulate one first.', true);
-  if (!event?.isTrusted) return;
+  if (event && !event.isTrusted) return;
   if (kind === 'ai') {
     if (active.handled) return;
     timers.forEach(clearTimeout); timers = [];
@@ -649,6 +689,7 @@ function act(kind, event) {
   finish(kind === 'transfer' ? 'Transferred' : 'Declined', kind === 'transfer' ? [['ai', 'Transferring you to the user now (simulated).']] : [['ai', 'Call declined by the user (simulated).']], event);
 }
 function runAI() {
+  TTS.unlockAudio();
   setPhase('handling');
   const tr = $('#liveTr'); tr.hidden = false; tr.innerHTML = '';
   $$('.actions .btn', $('#callBody')).forEach(b => { if (b.dataset.act === 'ai') b.disabled = true; });
@@ -658,10 +699,10 @@ function runAI() {
     if (!active || active.id !== callId) return;
     if (i >= lines.length) { goLive(); return; }   // scripted opening is done: the call stays open for typed messages
     const l = lines[i++]; addMsg(tr, l); active.chat.push(l);
-    if (l[0] === 'ai') TTS.speak(l[1]).then(() => timers.push(setTimeout(next, 700)));
-    else timers.push(setTimeout(next, 1400));
+    if (l[0] === 'ai') TTS.speak(l[1]).then(() => timers.push(setTimeout(next, 350)));
+    else timers.push(setTimeout(next, 800));
   };
-  timers.push(setTimeout(next, 600));
+  timers.push(setTimeout(next, 200));
 }
 /* ---------- Backend-backed conversation in simulated calls ---------- */
 function setBusy(b) {
@@ -1478,6 +1519,7 @@ async function checkNvidiaStatus() {
   try {
     const res = await Auth.fetch(`${API}/tts/status`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
     if (data.nvidia_configured || data.nvidia_api_configured) {
       window.CGAI_NVIDIA_ONLINE = true;
       tag.textContent = 'Connected (NVIDIA NIM)';

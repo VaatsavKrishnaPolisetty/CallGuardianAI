@@ -567,9 +567,18 @@ function go(id) {
   $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.go === id));
   $('#title').textContent = (TITLES[id] && TITLES[id][0]) || id;
   $('#sub').textContent = (TITLES[id] && TITLES[id][1]) || '';
+
+  // Always reset scroll to top of the newly active view
+  if (typeof lenisInstance !== 'undefined' && lenisInstance) {
+    try {
+      lenisInstance.scrollTo(0, { immediate: true });
+    } catch (_) {}
+  }
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+
   if (id === 'heroLanding') {
-    if (lenisInstance) lenisInstance.scrollTo(0, { immediate: true });
-    else window.scrollTo({ top: 0, behavior: 'smooth' });
     animateMetricCounters();
   }
   if (id === 'analytics') loadAnalytics();
@@ -578,7 +587,8 @@ function go(id) {
   if (id === 'vault') { loadVault(); loadCRM(); }
   if (id === 'settings') checkNvidiaStatus();
 }
- 
+window.go = go;
+
 /* ---------- Agent mode ---------- */
 function setAgent(on, fromSchedule) {
   state.agentOn = on;
@@ -1493,6 +1503,14 @@ async function checkNvidiaStatus() {
 /* ---------- Wire up events ---------- */
 function bind() {
   document.addEventListener('click', e => {
+    const goBtn = e.target.closest('[data-go]');
+    if (goBtn) {
+      const targetView = goBtn.dataset.go;
+      if (targetView) {
+        go(targetView);
+        return;
+      }
+    }
     const exp = e.target.closest('[data-export]');
     if (exp) { exportData(exp.dataset.export); return; }
     const sp = e.target.closest('[data-speak]');
@@ -1549,6 +1567,15 @@ function bind() {
   });
 
   $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.go); });
+  $('#heroLaunchSimBtn')?.addEventListener('click', () => go('overview'));
+  $('#compLaunchSimBtn')?.addEventListener('click', () => go('overview'));
+  $('#heroQuickMicBtn')?.addEventListener('click', () => {
+    go('overview');
+    setTimeout(() => {
+      const mic = $('#micBtn');
+      if (mic) { mic.focus(); mic.click(); }
+    }, 300);
+  });
   $('#agentToggle').addEventListener('change', e => { setAgent(e.target.checked); toast(e.target.checked ? 'Agent Mode on' : 'Agent Mode off'); });
   // Logout
   const logoutBtn = document.getElementById('logoutBtn');

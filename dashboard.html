@@ -339,7 +339,7 @@
           <!-- Quick Action Strip -->
           <div class="comp-cta-strip">
             <span class="comp-cta-text">Ready to test autonomous call screening with your own voice?</span>
-            <button class="btn pri" id="compLaunchSimBtn" data-go="overview">
+            <button class="btn pri" id="compLaunchSimBtn" data-go="overview" onclick="go('overview')" type="button" aria-label="Try Live Simulator">
               <span>⚡ Try Live Simulator</span>
             </button>
           </div>
@@ -636,7 +636,7 @@ window.CGAI_AUTH_READY.then(authorized => {
   if (!authorized) return;
   const loadApp = () => {
     const app = document.createElement('script');
-    app.src = 'app.js?v=chat-retry-2';
+    app.src = 'app.js?v=20261014-sim-fix';
     document.body.appendChild(app);
   };
   // Load app.js immediately

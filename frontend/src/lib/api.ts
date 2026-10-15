@@ -1,5 +1,5 @@
 const configuredApiBase = import.meta.env.VITE_API_URL?.trim();
-export const API_BASE = (configuredApiBase || (import.meta.env.DEV ? 'http://127.0.0.1:8001' : '')).replace(/\/$/, '');
+export const API_BASE = (configuredApiBase ?? (import.meta.env.DEV ? 'http://127.0.0.1:8001' : '')).replace(/\/$/, '');
 
 export interface User {
   id: number;
@@ -61,14 +61,14 @@ function csrfToken() {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!API_BASE) throw new Error('The CallGuardianAI API URL is not configured for this deployment.');
+  const url = API_BASE ? `${API_BASE}${path}` : path;
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const csrf = csrfToken();
   if (csrf) headers.set('X-CSRF-Token', csrf);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
+    response = await fetch(url, { ...options, headers, credentials: 'include' });
   } catch {
     throw new Error('Cannot reach the CallGuardianAI API. Check that the backend is running.');
   }

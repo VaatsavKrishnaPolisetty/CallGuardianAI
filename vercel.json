@@ -1,77 +1,111 @@
 {
-  "version": 2,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "fastapi"
+    },
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite"
+    }
+  },
   "rewrites": [
     {
-      "source": "/login",
-      "destination": "/login.html"
-    },
-    {
-      "source": "/register",
-      "destination": "/register.html"
-    },
-    {
-      "source": "/dashboard",
-      "destination": "/dashboard.html"
-    },
-    {
       "source": "/health",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/config-status",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/auth/(.*)",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/captcha",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
+    },
+    {
+      "source": "/auth/(.*)",
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/chat",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/calls/(.*)",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/calls",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
+    },
+    {
+      "source": "/calls/(.*)",
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/analytics/(.*)",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/export/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/vault/(.*)",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/vault",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
+    },
+    {
+      "source": "/vault/(.*)",
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/crm",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/tts/(.*)",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/tts",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
+    },
+    {
+      "source": "/tts/(.*)",
+      "destination": {
+        "service": "app"
+      }
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.py"
+      "destination": {
+        "service": "app"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
     }
   ]
 }

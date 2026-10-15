@@ -5,7 +5,7 @@
    Auth module — session cookie + CSRF header for every fetch to the API
    ═════════════════════════════════════════════════════════════════════ */
 const defaultApiHost = window.location.hostname || '127.0.0.1';
-const API = window.CGAI_API_BASE || `http://${defaultApiHost}:8001`;
+const API = window.CGAI_API_BASE || (window.location.port === '5500' || window.location.port === '5501' ? `http://${defaultApiHost}:8001` : window.location.origin);
 const CSRF_COOKIE  = 'cgai_csrf';
 const CSRF_HEADER  = 'X-CSRF-Token';
 const SESSION_COOKIE = 'cgai_session';

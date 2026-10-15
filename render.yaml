@@ -16,7 +16,9 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-3.8-flash
+        value: gemini-2.5-flash-lite
+      - key: NVIDIA_API_KEY
+        sync: false
       - key: CALLGUARDIAN_DB_PATH
         value: /var/data/callguardian.db
       - key: AUTH_COOKIE_SECURE

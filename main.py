@@ -13,7 +13,7 @@ import logging
 import secrets
 from typing import Literal, Annotated
 from datetime import datetime, timezone
-from fastapi.responses import JSONResponse, Response as PlainResponse
+from fastapi.responses import JSONResponse, Response as PlainResponse, FileResponse
 from gemini_config import classify_gemini_error, configured_api_key, load_project_environment
 
 # ── Environment ──────────────────────────────────────────────────────────────
@@ -196,8 +196,15 @@ def _require_csrf(request: Request) -> None:
 def _check_same_origin(request: Request) -> None:
     """Reject browser form/fetch requests from origins outside the local UI."""
     origin = request.headers.get("origin")
-    if origin and origin not in ALLOWED_ORIGINS:
-        raise HTTPException(status_code=403, detail="Request origin is not allowed.")
+    if not origin or origin in ALLOWED_ORIGINS:
+        return
+    # Allow requests originating from the exact same deployed host
+    host = request.headers.get("host")
+    if host:
+        clean_origin = origin.replace("https://", "").replace("http://", "").rstrip("/")
+        if clean_origin == host or clean_origin.split(":")[0] == host.split(":")[0]:
+            return
+    raise HTTPException(status_code=403, detail="Request origin is not allowed.")
 
 
 def _set_session_cookies(response: Response, raw_token: str, csrf_token: str) -> None:
@@ -379,8 +386,63 @@ def record_turn(request: ChatRequest, message: str, result: dict,
 # ═════════════════════════════════════════════════════════════════════════════
 
 @app.get("/")
-def home():
+def home(request: Request):
+    accept = request.headers.get("accept", "")
+    if os.path.exists("index.html") and ("text/html" in accept or "application/json" not in accept):
+        return FileResponse("index.html")
     return {"project": "CallGuardianAI", "status": "Backend is running"}
+
+
+@app.get("/login")
+@app.get("/login.html")
+def login_page():
+    if os.path.exists("login.html"):
+        return FileResponse("login.html")
+    return {"error": "login.html not found"}
+
+
+@app.get("/register")
+@app.get("/register.html")
+def register_page():
+    if os.path.exists("register.html"):
+        return FileResponse("register.html")
+    return {"error": "register.html not found"}
+
+
+@app.get("/dashboard")
+@app.get("/dashboard.html")
+def dashboard_page():
+    if os.path.exists("dashboard.html"):
+        return FileResponse("dashboard.html")
+    return {"error": "dashboard.html not found"}
+
+
+@app.get("/styles.css")
+def serve_styles():
+    if os.path.exists("styles.css"):
+        return FileResponse("styles.css", media_type="text/css")
+    raise HTTPException(status_code=404)
+
+
+@app.get("/auth.css")
+def serve_auth_css():
+    if os.path.exists("auth.css"):
+        return FileResponse("auth.css", media_type="text/css")
+    raise HTTPException(status_code=404)
+
+
+@app.get("/app.js")
+def serve_app_js():
+    if os.path.exists("app.js"):
+        return FileResponse("app.js", media_type="application/javascript")
+    raise HTTPException(status_code=404)
+
+
+@app.get("/chat-workflow.js")
+def serve_chat_workflow_js():
+    if os.path.exists("chat-workflow.js"):
+        return FileResponse("chat-workflow.js", media_type="application/javascript")
+    raise HTTPException(status_code=404)
 
 
 @app.get("/health")

@@ -1,0 +1,10 @@
+.git
+.env
+*.log
+__pycache__
+*.pyc
+.pytest_cache
+.test-api-import.db
+callguardian.db
+node_modules
+.DS_Store

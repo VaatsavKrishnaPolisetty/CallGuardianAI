@@ -12,7 +12,26 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-DB_PATH = Path(os.getenv("CALLGUARDIAN_DB_PATH", Path(__file__).parent / "callguardian.db"))
+def _get_default_db_path() -> Path:
+    env_path = os.getenv("CALLGUARDIAN_DB_PATH")
+    if env_path:
+        p = Path(env_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+    # Vercel and AWS Lambda serverless functions have a read-only root filesystem except /tmp
+    if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        tmp_db = Path("/tmp/callguardian.db")
+        root_db = Path(__file__).resolve().parent / "callguardian.db"
+        if not tmp_db.exists() and root_db.exists():
+            import shutil
+            try:
+                shutil.copy2(root_db, tmp_db)
+            except Exception:
+                pass
+        return tmp_db
+    return Path(__file__).parent / "callguardian.db"
+
+DB_PATH = _get_default_db_path()
 
 OUTCOMES = ("AI handled", "Transferred", "Declined")
 SOURCES = ("rule_sensitive", "gemini", "gemini_scam_override")

@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/register",
+      "destination": "/register.html"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/dashboard.html"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/config-status",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/auth/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/captcha",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/chat",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/calls/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/calls",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/analytics/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/export/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/vault/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/vault",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/crm",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/tts/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/tts",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    }
+  ]
+}

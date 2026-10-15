@@ -204,6 +204,8 @@ def _check_same_origin(request: Request) -> None:
         clean_origin = origin.replace("https://", "").replace("http://", "").rstrip("/")
         if clean_origin == host or clean_origin.split(":")[0] == host.split(":")[0]:
             return
+        if clean_origin.endswith(".vercel.app"):
+            return
     raise HTTPException(status_code=403, detail="Request origin is not allowed.")
 
 

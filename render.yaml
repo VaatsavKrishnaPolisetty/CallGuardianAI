@@ -1,15 +1,11 @@
 services:
   - type: web
-    name: callguardianai-api
+    name: callguardianai
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
-    disk:
-      name: callguardianai-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
@@ -19,32 +15,5 @@ services:
         value: gemini-2.5-flash-lite
       - key: NVIDIA_API_KEY
         sync: false
-      - key: CALLGUARDIAN_DB_PATH
-        value: /var/data/callguardian.db
       - key: AUTH_COOKIE_SECURE
-        value: "true"
-      - key: CORS_ALLOWED_ORIGINS
-        value: https://callguardianai.onrender.com
-      - key: AUTH_PASSWORD_MIN_LENGTH
-        value: "8"
-      - key: AUTH_PASSWORD_REQUIRE_UPPERCASE
-        value: "true"
-      - key: AUTH_PASSWORD_REQUIRE_DIGIT
-        value: "true"
-      - key: AUTH_PASSWORD_REQUIRE_SPECIAL
-        value: "true"
-
-  - type: static
-    name: callguardianai
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    rootDir: frontend
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_API_URL
-        value: https://callguardianai-api.onrender.com
-      - key: NODE_VERSION
-        value: 22.14.0
+        value: "false"

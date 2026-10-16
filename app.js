@@ -1009,6 +1009,7 @@ function bindChat() {
   $('#whisperClearBtn')?.addEventListener('click', () => {
     if ($('#whisperInput')) $('#whisperInput').value = '';
     Supervisor.whisperInstruction = '';
+    toast('Whisper cleared');
   });
   $('#supervisorDeck')?.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-whisper]');

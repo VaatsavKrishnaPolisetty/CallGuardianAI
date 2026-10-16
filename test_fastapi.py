@@ -196,6 +196,7 @@ def test_vault_crm_and_tts_endpoints(client):
     # TTS status and fallback
     tts_status = client.get("/tts/status")
     assert tts_status.status_code == 200
+    assert "primary_engine" in tts_status.json()
 
     tts_res = client.post("/tts", headers={"X-CSRF-Token": token}, json={"text": "Hello"})
     assert tts_res.status_code == 200
@@ -203,4 +204,8 @@ def test_vault_crm_and_tts_endpoints(client):
         assert len(tts_res.content) > 100
     else:
         assert "fallback_to_browser" in tts_res.json()
+
+    # /tts/stream endpoint
+    tts_stream = client.post("/tts/stream", headers={"X-CSRF-Token": token}, json={"text": "Hello"})
+    assert tts_stream.status_code == 200
 

@@ -13,7 +13,7 @@ import logging
 import secrets
 from typing import Literal, Annotated
 from datetime import datetime, timezone
-from fastapi.responses import JSONResponse, Response as PlainResponse, FileResponse
+from fastapi.responses import JSONResponse, Response as PlainResponse, FileResponse, StreamingResponse
 from gemini_config import classify_gemini_error, configured_api_key, load_project_environment
 
 # ── Environment ──────────────────────────────────────────────────────────────
@@ -985,15 +985,40 @@ def save_crm_route(body: CRMUpdate, current_user: CurrentUser, http_request: Req
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Protected: NVIDIA AI Voice (TTS)
+# Protected: Ultra-Low Latency Neural Voice (Cartesia Sonic & NVIDIA TTS)
 # ═════════════════════════════════════════════════════════════════════════════
+
+CARTESIA_VOICE_MAP = {
+    "katie": "a0e99841-438c-4a64-b679-ae501e7d6091",      # Calm Executive Receptionist (Default)
+    "alloy": "a0e99841-438c-4a64-b679-ae501e7d6091",      # Alias
+    "sarah": "69267136-1bdc-4103-a11a-70067564c498",      # Direct & Authoritative
+    "fable": "69267136-1bdc-4103-a11a-70067564c498",      # Alias
+    "barbershop": "694f9389-aac1-45b6-b726-9d9369183238", # Friendly Gatekeeper
+    "echo": "694f9389-aac1-45b6-b726-9d9369183238",       # Alias
+    "onyx": "694f9389-aac1-45b6-b726-9d9369183238",       # Alias
+    "priya": "829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30",      # Indian English Female
+    "arun": "5c5ad5e7-1014-460d-83bd-1c586d11a83e",       # Indian English Male
+}
+
+NVIDIA_VOICE_MAP = {
+    "alloy": "Magpie-Multilingual.EN-US.Aria",
+    "echo": "Magpie-Multilingual.EN-US.Mia.Calm",
+    "fable": "Magpie-Multilingual.EN-US.Sofia",
+    "onyx": "Magpie-Multilingual.EN-US.Jason",
+    "nova": "Magpie-Multilingual.EN-US.Leo",
+}
 
 @app.get("/tts/status")
 def tts_status(current_user: CurrentUser):
+    cartesia_key = (os.getenv("CARTESIA_API_KEY") or "").strip()
     nv_key = (os.getenv("NVIDIA_API_KEY") or "").strip()
+    primary = "cartesia" if cartesia_key else ("nvidia" if nv_key else "browser")
     return {
+        "cartesia_configured": bool(cartesia_key),
         "nvidia_configured": bool(nv_key),
-        "model": os.getenv("NVIDIA_TTS_MODEL", "nvidia/magpie-tts"),
+        "primary_engine": primary,
+        "model": "Cartesia Sonic (Sub-150ms)" if cartesia_key else (os.getenv("NVIDIA_TTS_MODEL", "nvidia/magpie-tts") if nv_key else "Browser Web Speech API"),
+        "active_persona": "Katie (Calm Executive)" if cartesia_key else "Default",
     }
 
 
@@ -1011,52 +1036,62 @@ def _get_tts_client():
 
 
 @app.post("/tts")
+@app.post("/tts/stream")
 async def text_to_speech(body: TTSRequest, current_user: CurrentUser, http_request: Request):
     _check_same_origin(http_request)
+    cartesia_key = (os.getenv("CARTESIA_API_KEY") or "").strip()
     nv_key = (os.getenv("NVIDIA_API_KEY") or "").strip()
-    if not nv_key:
-        return JSONResponse(
-            status_code=200,
-            content={"supported": False, "reason": "NVIDIA_API_KEY is not configured", "fallback_to_browser": True}
-        )
-    try:
-        url = os.getenv(
-            "NVIDIA_TTS_URL",
-            "https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com/v1/audio/synthesize"
-        )
-        voice_map = {
-            "alloy": "Magpie-Multilingual.EN-US.Aria",
-            "echo": "Magpie-Multilingual.EN-US.Mia.Calm",
-            "fable": "Magpie-Multilingual.EN-US.Sofia",
-            "onyx": "Magpie-Multilingual.EN-US.Jason",
-            "nova": "Magpie-Multilingual.EN-US.Leo",
-        }
-        chosen_voice = voice_map.get((body.voice or "alloy").lower(), body.voice or "Magpie-Multilingual.EN-US.Aria")
-        headers = {
-            "Authorization": f"Bearer {nv_key}",
-        }
-        data = {
-            "text": body.text[:1000],
-            "language": "en-US",
-            "voice": chosen_voice,
-            "encoding": "LINEAR_PCM",
-            "sample_rate_hz": "44100",
-        }
-        client_http = _get_tts_client()
-        res = await client_http.post(url, data=data, headers=headers)
-        if res.status_code == 200 and len(res.content) > 100:
-            return PlainResponse(content=res.content, media_type="audio/wav")
-        logger.warning("NVIDIA TTS returned %d: %s", res.status_code, res.text[:200])
-        return JSONResponse(
-            status_code=200,
-            content={"supported": False, "reason": f"NVIDIA error (HTTP {res.status_code})", "fallback_to_browser": True}
-        )
-    except Exception as exc:
-        logger.warning("NVIDIA TTS request exception: %s", exc)
-        return JSONResponse(
-            status_code=200,
-            content={"supported": False, "reason": str(exc), "fallback_to_browser": True}
-        )
+
+    # 1. High-speed Priority: Cartesia Sonic Streaming (<150ms TTFB)
+    if cartesia_key:
+        try:
+            from cartesia import AsyncCartesia
+            c_client = AsyncCartesia(api_key=cartesia_key)
+            voice_req = (body.voice or "katie").lower()
+            voice_id = CARTESIA_VOICE_MAP.get(voice_req, body.voice if len(body.voice or "") > 20 else "a0e99841-438c-4a64-b679-ae501e7d6091")
+            audio_stream = await c_client.tts.bytes(
+                model_id="sonic-english",
+                transcript=body.text[:1000],
+                voice={"mode": "id", "id": voice_id},
+                output_format={"container": "wav", "encoding": "pcm_s16le", "sample_rate": 24000},
+            )
+            return StreamingResponse(
+                audio_stream,
+                media_type="audio/wav",
+                headers={"X-TTS-Engine": "cartesia-sonic"}
+            )
+        except Exception as exc:
+            logger.warning("Cartesia TTS exception: %s. Falling back to secondary engine.", exc)
+
+    # 2. Secondary Cloud Fallback: NVIDIA NIM (if configured)
+    if nv_key:
+        try:
+            url = os.getenv(
+                "NVIDIA_TTS_URL",
+                "https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com/v1/audio/synthesize"
+            )
+            chosen_voice = NVIDIA_VOICE_MAP.get((body.voice or "alloy").lower(), body.voice or "Magpie-Multilingual.EN-US.Aria")
+            headers = {"Authorization": f"Bearer {nv_key}"}
+            data = {
+                "text": body.text[:1000],
+                "language": "en-US",
+                "voice": chosen_voice,
+                "encoding": "LINEAR_PCM",
+                "sample_rate_hz": "44100",
+            }
+            client_http = _get_tts_client()
+            res = await client_http.post(url, data=data, headers=headers)
+            if res.status_code == 200 and len(res.content) > 100:
+                return PlainResponse(content=res.content, media_type="audio/wav", headers={"X-TTS-Engine": "nvidia-nim"})
+            logger.warning("NVIDIA TTS returned %d: %s", res.status_code, res.text[:200])
+        except Exception as exc:
+            logger.warning("NVIDIA TTS request exception: %s", exc)
+
+    # 3. Graceful Fallback: Signal frontend to use browser speech synthesis instantly
+    return JSONResponse(
+        status_code=200,
+        content={"supported": False, "reason": "No cloud TTS key configured or available", "fallback_to_browser": True}
+    )
 
 
 @app.on_event("shutdown")

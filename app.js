@@ -283,15 +283,15 @@ const TTS = {
       }
     });
   },
-  async speakNvidia(text, voiceOverride = null) {
-    const voice = voiceOverride || state.nvidiaVoice || 'alloy';
+  async speakCloud(text, voiceOverride = null) {
+    const voice = voiceOverride || state.nvidiaVoice || 'katie';
     const cacheKey = `${voice}:${text}`;
     if (this.audioCache.has(cacheKey)) {
       return this.playAudioUrl(this.audioCache.get(cacheKey));
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     try {
       const res = await Auth.fetch(`${API}/tts`, {
@@ -303,12 +303,12 @@ const TTS = {
         })
       });
       clearTimeout(timeoutId);
-      if (!res.ok) throw new Error('NVIDIA TTS returned ' + res.status);
+      if (!res.ok) throw new Error('Cloud TTS returned ' + res.status);
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (!data.supported || data.fallback_to_browser) {
-          throw new Error(data.reason || 'NVIDIA TTS not available');
+          throw new Error(data.reason || 'Cloud TTS not available');
         }
       }
       const blob = await res.blob();
@@ -321,6 +321,9 @@ const TTS = {
       throw err;
     }
   },
+  async speakNvidia(text, voiceOverride = null) {
+    return this.speakCloud(text, voiceOverride);
+  },
   async speak(text, manual, voiceOverride = null) {
     if (!text || !text.trim()) return Promise.resolve();
     if (this.muted) { if (manual) toast('Voice is muted. Unmute to hear replies.', true); return Promise.resolve(); }
@@ -328,12 +331,12 @@ const TTS = {
 
     this.stop();
 
-    // 1. Always attempt NVIDIA AI Voice first (with 3.5s timeout for fast response)
+    // 1. Always attempt Neural Cloud Voice first (Cartesia Sonic / NVIDIA)
     try {
-      await this.speakNvidia(text, voiceOverride);
+      await this.speakCloud(text, voiceOverride);
       return;
     } catch (e) {
-      console.warn('NVIDIA TTS unavailable or timed out; using instant speech fallback:', e.message);
+      console.warn('Neural TTS unavailable or timed out; using instant speech fallback:', e.message);
     }
 
     // 2. Instant Browser Web Speech API fallback (ensures zero delay)
@@ -1520,8 +1523,16 @@ async function checkNvidiaStatus() {
     const res = await Auth.fetch(`${API}/tts/status`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if (data.nvidia_configured || data.nvidia_api_configured) {
-      window.CGAI_NVIDIA_ONLINE = true;
+    if (data.cartesia_configured) {
+      window.CGAI_TTS_ONLINE = true;
+      tag.textContent = 'Cartesia Sonic (Sub-150ms)';
+      tag.className = 'tag';
+      tag.style.background = 'rgba(61,255,168,0.15)';
+      tag.style.color = '#3dffa8';
+      tag.style.borderColor = 'rgba(61,255,168,0.4)';
+      text.textContent = `Model: ${data.model} · Ultra-low latency voice active (${data.active_persona})`;
+    } else if (data.nvidia_configured || data.nvidia_api_configured) {
+      window.CGAI_TTS_ONLINE = true;
       tag.textContent = 'Connected (NVIDIA NIM)';
       tag.className = 'tag';
       tag.style.background = 'rgba(61,255,168,0.15)';
@@ -1529,12 +1540,13 @@ async function checkNvidiaStatus() {
       tag.style.borderColor = 'rgba(61,255,168,0.4)';
       text.textContent = `Model: ${data.model} · Ready for speech synthesis`;
     } else {
+      window.CGAI_TTS_ONLINE = false;
       tag.textContent = 'Fallback (Web Speech)';
       tag.className = 'tag';
       tag.style.background = 'rgba(255,184,77,0.15)';
       tag.style.color = '#ffb84d';
       tag.style.borderColor = 'rgba(255,184,77,0.4)';
-      text.textContent = 'NVIDIA_API_KEY not configured in .env. Using browser natural voices.';
+      text.textContent = 'Add CARTESIA_API_KEY to .env for sub-150ms neural speech. Using browser voice.';
     }
   } catch (err) {
     tag.textContent = 'Offline';

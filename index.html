@@ -561,23 +561,31 @@
     <section id="settings" class="view">
       <div class="two">
         <div class="glass pad">
-          <h2>✦ NVIDIA AI Voice & Audio Engine</h2>
-          <p class="muted">Configure NVIDIA NIM models for high-fidelity speech synthesis.</p>
+          <h2>✦ Neural Voice & Audio Engine</h2>
+          <p class="muted">Ultra-low latency speech synthesis with sub-150ms streaming voice.</p>
           <div style="margin-top:16px;display:flex;flex-direction:column;gap:14px">
             <div style="padding:12px;background:rgba(255,255,255,0.04);border-radius:12px;border:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
               <div>
-                <b>NVIDIA NIM Audio Engine</b>
+                <b>Neural TTS Engine</b>
                 <p class="muted" id="nvStatusText" style="font-size:0.8rem;margin-top:2px">Checking status…</p>
               </div>
               <span class="tag" id="nvStatusTag">Checking</span>
             </div>
-            <label>NVIDIA Voice Persona
+            <label>Voice Persona
               <select id="sVoice">
-                <option value="alloy">NVIDIA Magpie-TTS — Neutral Assistant</option>
-                <option value="echo">NVIDIA Magpie-TTS — Calm Executive</option>
-                <option value="fable">NVIDIA Magpie-TTS — Warm & Friendly</option>
-                <option value="onyx">NVIDIA Magpie-TTS — Firm Gatekeeper</option>
-                <option value="nova">NVIDIA Magpie-TTS — High-Energy Clarity</option>
+                <optgroup label="Cartesia Sonic (Sub-150ms Streaming)">
+                  <option value="katie" selected>Katie — Calm Executive Receptionist</option>
+                  <option value="sarah">Sarah — Direct & Authoritative Screener</option>
+                  <option value="barbershop">Barbershop — Friendly Gatekeeper</option>
+                  <option value="priya">Priya — Indian English Natural</option>
+                  <option value="arun">Arun — Indian English Male</option>
+                </optgroup>
+                <optgroup label="NVIDIA NIM / Secondary Voices">
+                  <option value="alloy">NVIDIA Magpie — Neutral Assistant</option>
+                  <option value="echo">NVIDIA Magpie — Calm Executive</option>
+                  <option value="fable">NVIDIA Magpie — Warm & Friendly</option>
+                  <option value="onyx">NVIDIA Magpie — Firm Gatekeeper</option>
+                </optgroup>
               </select>
             </label>
             <div class="actions">

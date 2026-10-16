@@ -215,7 +215,19 @@ const TTS = {
     });
     return this.ready;
   },
-  setSpeaking(on) { this.speaking = on; if (this.ui.stop) this.ui.stop.disabled = !on; },
+  setSpeaking(on) {
+    this.speaking = on;
+    if (this.ui && this.ui.stop) this.ui.stop.disabled = !on;
+    try {
+      Auth.fetch(`${API}/session/vad/event`, {
+        method: 'POST',
+        body: JSON.stringify({
+          event: on ? 'ai_speaking_started' : 'ai_speaking_stopped',
+          client_call_id: activeCall ? activeCall.id : null
+        })
+      }).catch(() => {});
+    } catch (e) {}
+  },
   audioCache: new Map(),
   unlocked: false,
   unlockAudio() {
@@ -428,11 +440,31 @@ const MicInput = {
 
       this.recognizer.onstart = () => {
         this.isListening = true;
+        // ⚡ Barge-in: If the AI is speaking, interrupt it immediately!
+        if (TTS.speaking) {
+          TTS.stop();
+          toast('⚡ Interruption: AI speech muted to listen to you.', false);
+        }
         if (btn) {
           btn.classList.add('mic-active');
           btn.textContent = '🔴 Listening…';
         }
         toast('🎙️ Speak naturally as the caller…');
+        // Notify backend VAD turn-taking manager
+        try {
+          Auth.fetch(`${API}/session/vad/event`, {
+            method: 'POST',
+            body: JSON.stringify({
+              event: 'speech_started',
+              client_call_id: activeCall ? activeCall.id : null
+            })
+          }).then(r => r.json()).then(data => {
+            if (data && data.barge_in) {
+              TTS.stop();
+              toast('⚡ Caller barge-in registered by Silero VAD.', false);
+            }
+          }).catch(() => {});
+        } catch (e) {}
       };
 
       this.recognizer.onresult = (e) => {
@@ -454,6 +486,15 @@ const MicInput = {
 
       this.recognizer.onend = () => {
         this.stop();
+        try {
+          Auth.fetch(`${API}/session/vad/event`, {
+            method: 'POST',
+            body: JSON.stringify({
+              event: 'speech_stopped',
+              client_call_id: activeCall ? activeCall.id : null
+            })
+          }).catch(() => {});
+        } catch (e) {}
         if (input && input.value.trim() && state.autoMicSend !== false) {
           submitChatMessage();
         }

@@ -11,7 +11,7 @@ import sqlite3
 import time
 import logging
 import secrets
-from typing import Literal, Annotated
+from typing import Literal, Annotated, Optional
 from datetime import datetime, timezone
 from fastapi.responses import JSONResponse, Response as PlainResponse, FileResponse, StreamingResponse
 from gemini_config import classify_gemini_error, configured_api_key, load_project_environment
@@ -20,6 +20,7 @@ from gemini_config import classify_gemini_error, configured_api_key, load_projec
 load_project_environment()
 
 import db
+import voice_pipeline
 
 # Password hashing — argon2-cffi
 from argon2 import PasswordHasher
@@ -985,6 +986,60 @@ def save_crm_route(body: CRMUpdate, current_user: CurrentUser, http_request: Req
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# Protected: Real-Time WebRTC Audio & VAD (Pipecat & Silero)
+# ═════════════════════════════════════════════════════════════════════════════
+
+_vad_managers: dict[int, voice_pipeline.VADTurnManager] = {}
+
+def _get_vad_manager(user_id: int) -> voice_pipeline.VADTurnManager:
+    if user_id not in _vad_managers:
+        _vad_managers[user_id] = voice_pipeline.VADTurnManager()
+    return _vad_managers[user_id]
+
+
+class VADEventRequest(BaseModel):
+    event: Literal["speech_started", "speech_stopped", "ai_speaking_started", "ai_speaking_stopped"]
+    client_call_id: Optional[int] = None
+
+
+@app.get("/session/webrtc/status")
+def webrtc_status(current_user: CurrentUser):
+    daily_key = (os.getenv("DAILY_API_KEY") or "").strip()
+    return {
+        "pipecat_available": voice_pipeline.PIPECAT_AVAILABLE,
+        "daily_configured": bool(daily_key),
+        "engine": "Pipecat + Silero VAD",
+        "barge_in_supported": True,
+    }
+
+
+@app.post("/session/webrtc")
+async def provision_webrtc_session(current_user: CurrentUser, http_request: Request):
+    _check_same_origin(http_request)
+    room = await voice_pipeline.create_daily_room(room_name=f"cgai-user-{current_user['id']}")
+    return room
+
+
+@app.post("/session/vad/event")
+def handle_vad_event(body: VADEventRequest, current_user: CurrentUser, http_request: Request):
+    _check_same_origin(http_request)
+    vad = _get_vad_manager(current_user["id"])
+    if body.event == "ai_speaking_started":
+        vad.set_ai_speaking(True)
+        return {"status": "ok", "ai_speaking": True}
+    elif body.event == "ai_speaking_stopped":
+        vad.set_ai_speaking(False)
+        return {"status": "ok", "ai_speaking": False}
+    elif body.event == "speech_started":
+        result = vad.handle_caller_speech_start()
+        return result
+    elif body.event == "speech_stopped":
+        result = vad.handle_caller_speech_stop()
+        return result
+    return {"status": "ignored"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Protected: Ultra-Low Latency Neural Voice (Cartesia Sonic & NVIDIA TTS)
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -1049,14 +1104,14 @@ async def text_to_speech(body: TTSRequest, current_user: CurrentUser, http_reque
             c_client = AsyncCartesia(api_key=cartesia_key)
             voice_req = (body.voice or "katie").lower()
             voice_id = CARTESIA_VOICE_MAP.get(voice_req, body.voice if len(body.voice or "") > 20 else "a0e99841-438c-4a64-b679-ae501e7d6091")
-            audio_stream = await c_client.tts.bytes(
+            audio_res = await c_client.tts.generate(
                 model_id="sonic-english",
                 transcript=body.text[:1000],
                 voice={"mode": "id", "id": voice_id},
                 output_format={"container": "wav", "encoding": "pcm_s16le", "sample_rate": 24000},
             )
             return StreamingResponse(
-                audio_stream,
+                audio_res.iter_bytes(),
                 media_type="audio/wav",
                 headers={"X-TTS-Engine": "cartesia-sonic"}
             )

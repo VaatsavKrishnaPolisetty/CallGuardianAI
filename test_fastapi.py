@@ -209,3 +209,21 @@ def test_vault_crm_and_tts_endpoints(client):
     tts_stream = client.post("/tts/stream", headers={"X-CSRF-Token": token}, json={"text": "Hello"})
     assert tts_stream.status_code == 200
 
+    # WebRTC session status and provisioning
+    webrtc_status = client.get("/session/webrtc/status")
+    assert webrtc_status.status_code == 200
+    assert webrtc_status.json()["barge_in_supported"] is True
+
+    webrtc_room = client.post("/session/webrtc", headers={"X-CSRF-Token": token})
+    assert webrtc_room.status_code == 200
+    assert "mode" in webrtc_room.json()
+
+    # VAD speech start and barge-in event
+    vad_res = client.post(
+        "/session/vad/event",
+        headers={"X-CSRF-Token": token},
+        json={"event": "speech_started"}
+    )
+    assert vad_res.status_code == 200
+    assert vad_res.json()["event"] == "speech_started"
+

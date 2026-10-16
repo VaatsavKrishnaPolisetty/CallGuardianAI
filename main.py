@@ -298,10 +298,12 @@ class ConversationMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message:        str  = Field(max_length=2000)
-    history:        list[ConversationMessage] = Field(default_factory=list, max_length=60)
-    client_call_id: int | None = Field(default=None, ge=1, le=9_999_999_999_999)
-    caller_name:    str | None = Field(default=None, max_length=80)
+    message:             str  = Field(max_length=2000)
+    history:             list[ConversationMessage] = Field(default_factory=list, max_length=60)
+    client_call_id:      int | None = Field(default=None, ge=1, le=9_999_999_999_999)
+    caller_name:         str | None = Field(default=None, max_length=80)
+    whisper_instruction: str | None = Field(default=None, max_length=500)
+    honeypot_mode:       bool = Field(default=False)
 
 
 class CallCompleteRequest(BaseModel):
@@ -311,17 +313,19 @@ class CallCompleteRequest(BaseModel):
 
 
 class ChatAnalysis(BaseModel):
-    reply:                   str
-    summary:                 str
-    intent:                  str
-    urgency:                 Literal["Low", "Medium", "High"]
-    risk:                    Literal["Low", "Medium", "High"]
-    review_required:         bool
-    suggested_action:        Literal["accept", "decline", "transfer"]
+    reply:                    str
+    summary:                  str
+    intent:                   str
+    urgency:                  Literal["Low", "Medium", "High"]
+    risk:                     Literal["Low", "Medium", "High"]
+    review_required:          bool
+    suggested_action:         Literal["accept", "decline", "transfer"]
     sensitive_info_requested: bool
-    sentiment:               str = Field(default="Neutral")
-    stress_level:            int = Field(default=20, ge=0, le=100)
-    caller_memory_note:      str | None = Field(default=None)
+    sentiment:                str = Field(default="Neutral")
+    stress_level:             int = Field(default=20, ge=0, le=100)
+    caller_memory_note:       str | None = Field(default=None)
+    honeypot_active:          bool = Field(default=False)
+    supervisor_whisper_used:  bool = Field(default=False)
 
 
 class VaultRuleCreate(BaseModel):
@@ -338,6 +342,13 @@ class CRMUpdate(BaseModel):
 class TTSRequest(BaseModel):
     text:  str = Field(min_length=1, max_length=2000)
     voice: str = Field(default="alloy", max_length=50)
+
+
+class AcousticEvalRequest(BaseModel):
+    text:                 str   = Field(min_length=1, max_length=2000)
+    stress_level:         int   = Field(default=25, ge=0, le=100)
+    duration_seconds:     float = Field(default=3.0, ge=0.0, le=300.0)
+    synthetic_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -649,7 +660,29 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
         if item.role == "caller" and item.content.strip()
     ] + [message]
 
+    whisper_active = bool(request.whisper_instruction and request.whisper_instruction.strip())
+    honeypot_active = bool(request.honeypot_mode)
+
     if any(SENSITIVE_INFO_PATTERN.search(text) for text in caller_messages):
+        if honeypot_active:
+            fake_reply = "Oh goodness, a verification number? Let me look for my spectacles, I wrote a code on an envelope by the telephone... Hold on just a second..."
+            result = ChatAnalysis(
+                reply=fake_reply,
+                summary="Caller requested sensitive authentication credentials (Honey-pot stall engaged).",
+                intent="Credential fishing (Honey-Pot active)",
+                urgency="Low",
+                risk="High",
+                review_required=True,
+                suggested_action="decline",
+                sensitive_info_requested=True,
+                sentiment="Demanding",
+                stress_level=85,
+                honeypot_active=True,
+                supervisor_whisper_used=whisper_active,
+            ).model_dump()
+            record_turn(request, message, result, "rule_sensitive", started, user_id)
+            return result
+
         result = ChatAnalysis(
             reply=(
                 "For your safety, never share an OTP, password, banking PIN, "
@@ -662,6 +695,8 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
             review_required=True,
             suggested_action="decline",
             sensitive_info_requested=True,
+            honeypot_active=False,
+            supervisor_whisper_used=whisper_active,
         ).model_dump()
         record_turn(request, message, result, "rule_sensitive", started, user_id)
         return result
@@ -674,6 +709,23 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
     vault_prompt = ("\n".join(active_vault_items)) if active_vault_items else "No specific custom rules configured."
     caller_ctx = db.get_caller_history_context(user_id, request.caller_name or "Unknown caller")
     caller_prompt = caller_ctx if caller_ctx else "First-time caller or no past history."
+
+    whisper_instruction_prompt = ""
+    if whisper_active:
+        whisper_instruction_prompt = (
+            f"\n=== LIVE PRIVATE SUPERVISOR WHISPER ===\n"
+            f"The call owner has secretly whispered: '{request.whisper_instruction.strip()}'. "
+            "You MUST weave this instruction naturally into your reply to the caller without mentioning you were coached or whispered to.\n"
+        )
+
+    honeypot_prompt = ""
+    if honeypot_active:
+        honeypot_prompt = (
+            "\n=== HONEY-POT DIVERSION MODE ACTIVE ===\n"
+            "The user enabled Honey-Pot mode! The caller is suspected to be a scammer. Your goal is to waste their time harmlessly while protecting the user. "
+            "Adopt an eccentric, chatty, slightly confused persona (like a friendly grandparent). Ramble harmlessly, ask them to re-explain technical terms, "
+            "give completely fake/useless details if pressed, and keep them on the line politely without agreeing to send real money or credentials.\n"
+        )
 
     models_to_try = [MODEL]
     for alt in ["gemini-2.5-flash-lite", "gemini-2.5-flash"]:
@@ -699,6 +751,8 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
             "urgency, and scam risk. Set sensitive_info_requested true when "
             "a caller requests an OTP, password, banking PIN, card code, or "
             "other credential. "
+            f"{whisper_instruction_prompt}"
+            f"{honeypot_prompt}"
             "\n=== USER KNOWLEDGE VAULT (PREFERENCES & FAQ) ===\n"
             f"{vault_prompt}\n"
             "Enforce the user's policies and knowledge vault rules in the assistant reply (e.g., politely declining sales pitches, quoting consulting rates of $100/hr, providing exact drop-off instructions). "
@@ -771,10 +825,16 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
             analysis.risk = "High"
             analysis.review_required = True
             analysis.suggested_action = "decline"
-            analysis.reply = (
-                "For your safety, never share an OTP, password, banking PIN, "
-                "verification code, or card security details with anyone."
-            )
+            if honeypot_active:
+                analysis.reply = (
+                    "Oh goodness, a verification number? Let me look for my spectacles, "
+                    "I wrote a code on an envelope by the telephone... Hold on just a second..."
+                )
+            else:
+                analysis.reply = (
+                    "For your safety, never share an OTP, password, banking PIN, "
+                    "verification code, or card security details with anyone."
+                )
         if analysis.urgency == "High" or analysis.risk == "High":
             analysis.review_required = True
         if not analysis.sensitive_info_requested and any(
@@ -786,10 +846,15 @@ def chat(request: ChatRequest, current_user: CurrentUser, http_request: Request)
             analysis.review_required = True
             analysis.suggested_action = "decline"
             analysis.summary = "Caller message contains common scam indicators."
-            analysis.reply = (
-                "This request has common scam warning signs. Do not send money or "
-                "personal information; verify the claim independently."
-            )
+            if not honeypot_active:
+                analysis.reply = (
+                    "This request has common scam warning signs. Do not send money or "
+                    "personal information; verify the claim independently."
+                )
+        if honeypot_active:
+            analysis.honeypot_active = True
+        if whisper_active:
+            analysis.supervisor_whisper_used = True
 
         result = analysis.model_dump()
         record_turn(request, message, result, source, started, user_id)
@@ -857,6 +922,17 @@ def get_call_route(call_id: int, current_user: CurrentUser):
     if not call:
         raise HTTPException(status_code=404, detail="Call not found.")
     return call
+
+
+@app.get("/calls/{call_id}/dossier")
+def get_call_dossier_route(call_id: int, current_user: CurrentUser):
+    try:
+        call = db.get_call(call_id, user_id=current_user["id"])
+    except (ValueError, TypeError, OverflowError):
+        call = None
+    if not call:
+        raise HTTPException(status_code=404, detail="Call record not found.")
+    return voice_pipeline.ThreatDossierGenerator.generate(call)
 
 
 @app.get("/analytics/summary")
@@ -1039,6 +1115,17 @@ def handle_vad_event(body: VADEventRequest, current_user: CurrentUser, http_requ
     return {"status": "ignored"}
 
 
+@app.post("/session/acoustic/evaluate")
+def evaluate_acoustic_route(req: AcousticEvalRequest, current_user: CurrentUser):
+    features = {"synthetic_confidence": req.synthetic_confidence} if req.synthetic_confidence > 0 else None
+    return voice_pipeline.DeepfakeSentinel.analyze_acoustic_turn(
+        text=req.text,
+        reported_stress=req.stress_level,
+        duration_seconds=req.duration_seconds,
+        audio_features=features,
+    )
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Protected: Ultra-Low Latency Neural Voice (Cartesia Sonic & NVIDIA TTS)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1105,7 +1192,7 @@ async def text_to_speech(body: TTSRequest, current_user: CurrentUser, http_reque
             voice_req = (body.voice or "katie").lower()
             voice_id = CARTESIA_VOICE_MAP.get(voice_req, body.voice if len(body.voice or "") > 20 else "a0e99841-438c-4a64-b679-ae501e7d6091")
             audio_res = await c_client.tts.generate(
-                model_id="sonic-english",
+                model_id="sonic-2",
                 transcript=body.text[:1000],
                 voice={"mode": "id", "id": voice_id},
                 output_format={"container": "wav", "encoding": "pcm_s16le", "sample_rate": 24000},

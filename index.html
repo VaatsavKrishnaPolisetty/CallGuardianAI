@@ -371,26 +371,59 @@
               </div>
               <div id="liveTr" class="transcript" hidden></div>
               <div id="chatBox" class="chat-box" hidden>
-  <div class="chips" aria-label="Example caller messages">
-    <button class="btn" type="button" data-chip="Can I book an appointment for tomorrow at 10 AM?">Ask about an appointment</button>
-    <button class="btn" type="button" data-chip="What are your opening hours and address?">Request information</button>
-    <button class="btn" type="button" data-chip="Can I speak to a human, please?">Speak to a human</button>
-    <button class="btn" type="button" data-chip="This is urgent, please help me.">Urgent request</button>
-  </div>
-  <div id="chatComposer" class="composer" role="group" aria-label="Send caller message">
-    <button class="btn btn-mic" id="micBtn" type="button" title="Speak as caller (Microphone Speech-to-Text)">
-      <span class="mic-icon">🎙️</span>
-      <span class="mic-wave" aria-hidden="true"><span></span><span></span><span></span></span>
-    </button>
-    <input id="chatInput" type="text" maxlength="200" autocomplete="off" placeholder="Type or click 🎙️ to speak as caller…" aria-label="Caller message">
-    <button class="btn pri" id="chatSend" type="button">Send</button>
-    <button class="btn danger" id="chatEnd" type="button">End call</button>
-  </div>
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
-    <p class="muted" style="margin:0;font-size:0.8rem">Simulated call. Neural voice by Cartesia Sonic.</p>
-    <span class="tag" style="font-size:0.75rem;background:rgba(61,255,168,0.12);color:#3dffa8;border-color:rgba(61,255,168,0.3)">⚡ Pipecat Silero VAD & Barge-In Active</span>
-  </div>
-</div>
+                <!-- Live Call Supervisor Command Deck -->
+                <div class="supervisor-deck" id="supervisorDeck">
+                  <div class="supervisor-header">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="pulse-indicator"></span>
+                      <strong style="font-size:0.85rem;letter-spacing:0.02em;text-transform:uppercase;color:var(--cy)">Live Call Supervisor</strong>
+                    </div>
+                    <div class="supervisor-toggles" style="display:flex;gap:8px;align-items:center">
+                      <button class="btn btn-sm" id="honeypotBtn" type="button" title="Engage Honey-Pot mode to stall & waste scammer time">🍯 Honey-Pot Mode (Off)</button>
+                      <button class="btn btn-sm" id="takeoverBtn" type="button" title="Mute AI and speak or type directly to the caller">📞 Take Over Call</button>
+                      <button class="btn btn-sm pri" id="returnToAIBtn" type="button" style="display:none" title="Return call control to AI assistant">🤖 Return to AI</button>
+                    </div>
+                  </div>
+                  
+                  <!-- Secret Whisper Bar -->
+                  <div class="whisper-container" id="whisperContainer">
+                    <div class="whisper-input-row">
+                      <span class="whisper-icon" title="Secret supervisor instruction">🤫</span>
+                      <input id="whisperInput" type="text" maxlength="200" autocomplete="off" placeholder="Whisper private instruction to AI (e.g. 'Ask for badge number', 'Quote $150/hr')…" aria-label="Supervisor private whisper instruction">
+                      <button class="btn btn-sm" id="whisperClearBtn" type="button" title="Clear whisper">✕</button>
+                    </div>
+                    <div class="whisper-chips" aria-label="Quick whisper templates">
+                      <button class="btn btn-xs" type="button" data-whisper="Ask for their employee badge number and supervisor contact">🏷️ Badge ID</button>
+                      <button class="btn btn-xs" type="button" data-whisper="State company policy requires a verified callback to official line">🔒 Official Callback</button>
+                      <button class="btn btn-xs" type="button" data-whisper="Tell them to email the documents to our office address for review">📧 Email Docs</button>
+                      <button class="btn btn-xs" type="button" data-whisper="Quote consulting fee of $150 per hour for inquiries">💼 Quote $150/hr</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chips" aria-label="Example caller messages">
+                  <button class="btn" type="button" data-chip="Can I book an appointment for tomorrow at 10 AM?">Ask about an appointment</button>
+                  <button class="btn" type="button" data-chip="What are your opening hours and address?">Request information</button>
+                  <button class="btn" type="button" data-chip="Can I speak to a human, please?">Speak to a human</button>
+                  <button class="btn" type="button" data-chip="This is urgent, please help me.">Urgent request</button>
+                </div>
+                <div id="chatComposer" class="composer" role="group" aria-label="Send caller message">
+                  <button class="btn btn-mic" id="micBtn" type="button" title="Speak as caller (Microphone Speech-to-Text)">
+                    <span class="mic-icon">🎙️</span>
+                    <span class="mic-wave" aria-hidden="true"><span></span><span></span><span></span></span>
+                  </button>
+                  <input id="chatInput" type="text" maxlength="200" autocomplete="off" placeholder="Type or click 🎙️ to speak as caller…" aria-label="Caller message">
+                  <button class="btn pri" id="chatSend" type="button">Send</button>
+                  <button class="btn danger" id="chatEnd" type="button">End call</button>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
+                  <p class="muted" style="margin:0;font-size:0.8rem">Simulated call. Neural voice by Cartesia Sonic.</p>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <span class="tag" style="font-size:0.75rem;background:rgba(61,255,168,0.12);color:#3dffa8;border-color:rgba(61,255,168,0.3)">⚡ Pipecat Silero VAD</span>
+                    <span class="tag" style="font-size:0.75rem;background:rgba(0,210,255,0.12);color:#00d2ff;border-color:rgba(0,210,255,0.3)">🎙️ Cartesia Sonic &lt;150ms</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="glass tilt" id="decision">
@@ -462,6 +495,20 @@
               <span id="trajSummary" class="traj-summary" style="font-size:0.78rem;color:var(--cy)"></span>
             </div>
             <div id="trajTimeline" class="traj-timeline" style="display:flex;align-items:center;gap:6px;overflow-x:auto;padding-bottom:4px"></div>
+          </div>
+          <!-- Threat Dossier & Forensic Intelligence Strip -->
+          <div id="dossierStrip" class="dossier-strip" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:10px 14px;background:rgba(14,22,38,0.7);border:1px solid rgba(0,210,255,0.25);border-radius:12px;flex-wrap:wrap;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:1.2rem">🛡️</span>
+              <div>
+                <b style="font-size:0.85rem;color:#ffffff">Automated Threat Dossier</b>
+                <p class="muted" id="dossierThreatLabel" style="font-size:0.75rem;margin:0">Forensic intelligence & deepfake acoustic analysis</p>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm pri" id="viewDossierBtn" type="button">🛡️ View Forensic Dossier</button>
+              <button class="btn btn-sm" id="exportDossierJsonBtn" type="button" title="Download SHA256 hashed evidence report">📥 Export JSON</button>
+            </div>
           </div>
           <div id="transcript" class="transcript"></div>
         </div>
@@ -663,5 +710,89 @@ window.CGAI_AUTH_READY.then(authorized => {
   document.body.appendChild(three);
 });
 </script>
+  <!-- Forensic Threat Dossier Modal -->
+  <div id="dossierModal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.3rem">🛡️</span>
+            <h2 style="margin:0;font-size:1.15rem">Forensic Fraud Dossier & Threat Report</h2>
+          </div>
+          <p class="muted" id="dossierSubtitle" style="font-size:0.8rem;margin:4px 0 0 0">Investigative audit trail for law enforcement & security defense</p>
+        </div>
+        <button class="modal-close-btn" id="closeDossierModalBtn" type="button" aria-label="Close modal">✕</button>
+      </div>
+
+      <div class="dossier-grid">
+        <div class="dossier-card" id="cardDossierId">
+          <small class="muted">Dossier ID</small>
+          <div style="font-weight:700;font-size:0.95rem" id="dossierIdVal">—</div>
+          <small class="muted" id="dossierTimeVal">—</small>
+        </div>
+        <div class="dossier-card" id="cardThreatLevel">
+          <small class="muted">Composite Threat Level</small>
+          <div style="font-weight:700;font-size:1.05rem" id="dossierThreatVal">—</div>
+          <small id="dossierRiskDescVal">—</small>
+        </div>
+      </div>
+
+      <!-- Acoustic Deepfake Sentinel -->
+      <div class="dossier-card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <b>🎙️ Acoustic Deepfake Sentinel (Voice Clone Analysis)</b>
+          <span class="tag" id="dossierDeepfakeBadge">Authentic Human</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin:8px 0">
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:4px">
+              <span>Human Authenticity Confidence:</span>
+              <b id="dossierHumanConfidenceVal">96.0%</b>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:99px;overflow:hidden">
+              <div id="dossierHumanBar" style="height:100%;width:96%;background:linear-gradient(90deg, #10b981, #00d2ff);transition:width 0.4s ease"></div>
+            </div>
+          </div>
+        </div>
+        <div id="dossierAcousticFlags" style="font-size:0.75rem;color:var(--mut)">No synthetic audio anomalies detected in speech cadence.</div>
+      </div>
+
+      <!-- Social Engineering Vectors -->
+      <div class="dossier-card" style="margin-bottom:12px">
+        <b>🚨 Social Engineering Attack Vectors</b>
+        <div id="dossierVectorsList" style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+          <p class="muted" style="margin:0;font-size:0.8rem">No coercive social engineering patterns flagged.</p>
+        </div>
+      </div>
+
+      <!-- Matched Fraud Playbook -->
+      <div class="dossier-card" id="dossierPlaybookCard" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b>⚖️ Matched Cybercrime Playbook (I4C / FBI / FTC)</b>
+          <span class="tag" id="dossierPlaybookAgency">Law Enforcement</span>
+        </div>
+        <p id="dossierPlaybookName" style="margin:6px 0 2px;font-weight:600;font-size:0.9rem">None (Routine Inquiries)</p>
+        <small class="muted" id="dossierPlaybookAction">Standard caller verification recommended.</small>
+      </div>
+
+      <!-- Chain of Custody Forensic Hash -->
+      <div class="dossier-card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <b>🔐 Chain of Custody Evidence Hash</b>
+          <small class="muted">SHA-256 Digest</small>
+        </div>
+        <div class="dossier-hash" id="dossierHashVal">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <small class="muted" style="font-size:0.75rem">Legal Notice: Automated forensic summary generated for legal reporting.</small>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm pri" id="downloadDossierJsonBtn" type="button">📥 Download Evidence JSON</button>
+          <button class="btn btn-sm" id="closeDossierBottomBtn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

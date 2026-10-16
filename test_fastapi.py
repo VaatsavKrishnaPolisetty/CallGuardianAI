@@ -117,6 +117,25 @@ def test_gemini_success_and_failure_response_paths(client, monkeypatch):
     assert response.status_code == 200 and response.json()["reply"] == "Hello"
     assert [turn["role"] for turn in json.loads(captured["contents"])] == ["caller", "assistant", "caller"]
     assert json.loads(captured["contents"])[-1]["content"] == "Hello"
+
+    # Verify live supervisor whisper injection
+    whisper_res = client.post("/chat", headers={"X-CSRF-Token": token}, json={
+        "message": "Who are you?",
+        "whisper_instruction": "Ask for badge ID",
+    })
+    assert whisper_res.status_code == 200
+    assert whisper_res.json()["supervisor_whisper_used"] is True
+    assert "Ask for badge ID" in captured["config"]["system_instruction"]
+
+    # Verify honeypot mode diversion on sensitive credential requests
+    honeypot_res = client.post("/chat", headers={"X-CSRF-Token": token}, json={
+        "message": "Give me your OTP immediately",
+        "honeypot_mode": True,
+    })
+    assert honeypot_res.status_code == 200
+    assert honeypot_res.json()["honeypot_active"] is True
+    assert "spectacles" in honeypot_res.json()["reply"]
+
     empty = client.post("/chat", headers={"X-CSRF-Token": token}, json={"message": "  "})
     assert empty.status_code == 400
 
@@ -226,4 +245,34 @@ def test_vault_crm_and_tts_endpoints(client):
     )
     assert vad_res.status_code == 200
     assert vad_res.json()["event"] == "speech_started"
+
+    # Acoustic Deepfake Evaluation
+    acoustic_res = client.post(
+        "/session/acoustic/evaluate",
+        headers={"X-CSRF-Token": token},
+        json={"text": "Hello, I am calling to inquire about booking an appointment tomorrow.", "stress_level": 20}
+    )
+    assert acoustic_res.status_code == 200
+    assert acoustic_res.json()["deepfake_risk"] == "Low"
+    assert acoustic_res.json()["human_authenticity_percent"] >= 80
+
+    # Threat Dossier Generation
+    fake_call_id = 1761111111111
+    # First complete a call so it's in the DB
+    complete_res = client.post(
+        "/calls/complete",
+        headers={"X-CSRF-Token": token},
+        json={"client_call_id": fake_call_id, "outcome": "Declined", "caller_name": "Fake Police"}
+    )
+    assert complete_res.status_code == 200
+
+    dossier_res = client.get(f"/calls/{fake_call_id}/dossier")
+    assert dossier_res.status_code == 200
+    dossier = dossier_res.json()
+    assert dossier["call_id"] == fake_call_id
+    assert "evidence_sha256" in dossier
+    assert "threat_level" in dossier
+
+    # 404 on unknown call dossier
+    assert client.get("/calls/9999999999999/dossier").status_code == 404
 
